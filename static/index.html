@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>MultiGame</title>
+<style>
+:root {
+  --bg:#0d0d14; --surf:#161622; --border:#2a2a3d;
+  --acc:#6c63ff; --acc2:#ff6584; --text:#e8e8f0; --muted:#7878a0;
+  --green:#50C864; --p1:#DC5050; --p2:#5050DC; --p3:#50C864; --p4:#DCDC50;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh;overflow-x:hidden}
+
+/* screens */
+.screen{display:none;flex-direction:column;align-items:center;min-height:100vh;padding:24px 16px}
+.screen.active{display:flex}
+
+/* logo */
+.logo{font-size:2.2rem;font-weight:800;letter-spacing:-1px;
+      background:linear-gradient(135deg,var(--acc),var(--acc2));
+      -webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:6px}
+.subtitle{color:var(--muted);margin-bottom:28px;font-size:.9rem}
+
+/* game cards */
+.game-cards{display:flex;gap:14px;flex-wrap:wrap;justify-content:center;
+            margin-bottom:24px;width:100%;max-width:680px}
+.game-card{background:var(--surf);border:2px solid var(--border);border-radius:16px;
+           padding:20px;cursor:pointer;flex:1;min-width:200px;transition:.2s}
+.game-card:hover{border-color:var(--acc);transform:translateY(-2px)}
+.game-card.sel{border-color:var(--acc);background:#1e1e32}
+.game-card .icon{font-size:2rem;margin-bottom:8px}
+.game-card h3{font-size:1rem;margin-bottom:4px}
+.game-card p{color:var(--muted);font-size:.8rem;line-height:1.5}
+
+/* tabs */
+.tabs{display:flex;border:1.5px solid var(--border);border-radius:8px;
+      overflow:hidden;width:100%;max-width:500px;margin-bottom:20px}
+.tab{flex:1;padding:10px;background:var(--surf);color:var(--muted);
+     cursor:pointer;text-align:center;font-size:.9rem;transition:.15s;border:none}
+.tab.active{background:var(--acc);color:#fff}
+
+/* form */
+.section{width:100%;max-width:500px;margin-bottom:16px}
+.section label{display:block;color:var(--muted);font-size:.75rem;
+               text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px}
+input[type=text],select{width:100%;background:var(--surf);border:1.5px solid var(--border);
+  color:var(--text);border-radius:8px;padding:10px 14px;font-size:.95rem;outline:none;transition:.2s}
+input[type=text]:focus,select:focus{border-color:var(--acc)}
+
+/* slot configurator */
+.slot-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;
+           width:100%;max-width:500px;margin-bottom:16px}
+.slot-cell{background:var(--surf);border:2px solid var(--border);border-radius:10px;
+           padding:10px 6px;text-align:center;cursor:pointer;transition:.15s;user-select:none}
+.slot-cell:hover{border-color:var(--muted)}
+.slot-cell.human{border-color:var(--acc);background:#1a1a30}
+.slot-cell.bot{border-color:#a06428;background:#1e1610}
+.slot-cell.empty{opacity:.45}
+.slot-cell .slot-icon{font-size:1.4rem;margin-bottom:3px}
+.slot-cell .slot-label{font-size:.7rem;color:var(--muted)}
+.slot-cell.human .slot-label{color:var(--acc)}
+.slot-cell.bot .slot-label{color:#d4943c}
+
+.slot-legend{display:flex;gap:16px;font-size:.78rem;color:var(--muted);
+             width:100%;max-width:500px;margin-bottom:12px}
+.slot-legend span{display:flex;align-items:center;gap:5px}
+.leg-dot{width:10px;height:10px;border-radius:3px}
+
+/* buttons */
+.btn{padding:11px 28px;border:none;border-radius:10px;font-size:.95rem;
+     font-weight:700;cursor:pointer;transition:.15s}
+.btn-primary{background:var(--acc);color:#fff}
+.btn-primary:hover{background:#7c74ff;transform:translateY(-1px)}
+.btn-secondary{background:var(--surf);color:var(--text);border:1.5px solid var(--border)}
+.btn-secondary:hover{border-color:var(--acc)}
+.btn:disabled{opacity:.4;cursor:default;transform:none}
+.btn-row{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+
+/* room list */
+.room-list{width:100%;max-width:500px;display:flex;flex-direction:column;gap:8px}
+.room-item{background:var(--surf);border:1.5px solid var(--border);border-radius:10px;
+           padding:12px 16px;display:flex;align-items:center;justify-content:space-between}
+.room-item h4{font-size:.9rem}
+.room-item p{color:var(--muted);font-size:.78rem;margin-top:2px}
+.badge{padding:3px 8px;border-radius:99px;font-size:.72rem;font-weight:600;
+       background:var(--border);color:var(--muted)}
+.badge.open{background:#1a3a1a;color:var(--green)}
+
+/* waiting room */
+.wait-wrap{width:100%;max-width:560px}
+.room-header{background:var(--surf);border:1.5px solid var(--border);border-radius:12px;
+             padding:18px 20px;margin-bottom:14px}
+.room-code{font-family:monospace;font-size:1.7rem;font-weight:800;
+           color:var(--acc);letter-spacing:3px}
+.wait-slots{display:flex;flex-direction:column;gap:7px;margin-bottom:18px}
+.wait-slot{background:var(--surf);border:1.5px solid var(--border);border-radius:8px;
+           padding:11px 14px;display:flex;align-items:center;gap:10px}
+.wait-slot.human-filled{border-color:var(--acc)}
+.wait-slot.bot-slot{border-color:#a06428;background:#16130a}
+.wait-slot.you{border-color:var(--green)}
+.wait-dot{width:10px;height:10px;border-radius:50%}
+.wait-slot.human-filled .wait-dot{background:var(--acc)}
+.wait-slot.bot-slot .wait-dot{background:#d4943c}
+.wait-slot.you .wait-dot{background:var(--green)}
+.wait-name{flex:1;font-size:.9rem}
+.wait-status{font-size:.78rem;color:var(--muted)}
+.countdown{font-size:3rem;font-weight:900;color:var(--acc);
+           text-align:center;margin:14px 0;animation:pulse .5s infinite alternate}
+@keyframes pulse{from{opacity:1}to{opacity:.35}}
+
+/* game screen */
+#gameScreen{padding:0;background:#0a0a10}
+#gameCanvas{display:block;max-width:100vw;max-height:calc(100vh - 110px);touch-action:none}
+.game-hud{width:100%;max-width:800px;display:flex;align-items:center;
+          justify-content:space-between;padding:7px 12px;background:var(--surf)}
+.hud-players{display:flex;gap:10px;flex-wrap:wrap}
+.hud-player{display:flex;align-items:center;gap:5px;font-size:.82rem}
+.hud-color{width:9px;height:9px;border-radius:2px}
+.hud-score{font-weight:700}
+.hud-elim{opacity:.3;text-decoration:line-through}
+.hud-bot{font-size:.68rem;color:var(--muted)}
+
+/* mobile controls */
+.mobile-controls{width:100%;max-width:800px;display:flex;
+                 justify-content:space-between;align-items:center;
+                 padding:8px 16px;gap:12px;user-select:none}
+.dpad{position:relative;width:120px;height:120px}
+.dpad-btn{position:absolute;width:38px;height:38px;background:var(--surf);
+          border:1.5px solid var(--border);border-radius:8px;
+          display:flex;align-items:center;justify-content:center;font-size:1.1rem;
+          cursor:pointer;-webkit-tap-highlight-color:transparent;transition:background .1s}
+.dpad-btn:active,.dpad-btn.pressed{background:var(--acc);border-color:var(--acc)}
+.dpad-btn.up{top:0;left:41px}.dpad-btn.down{bottom:0;left:41px}
+.dpad-btn.left{top:41px;left:0}.dpad-btn.right{top:41px;right:0}
+.dpad-btn.center{top:41px;left:41px;font-size:.65rem}
+.action-btn{width:72px;height:72px;border-radius:50%;background:var(--acc2);
+            border:none;color:#fff;font-size:1.4rem;cursor:pointer;font-weight:800;
+            -webkit-tap-highlight-color:transparent}
+.action-btn:active{transform:scale(.92)}
+
+/* overlay */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.78);
+         display:none;flex-direction:column;align-items:center;justify-content:center;z-index:100}
+.overlay.show{display:flex}
+.result-card{background:var(--surf);border:2px solid var(--border);border-radius:20px;
+             padding:36px 44px;text-align:center;max-width:380px;width:90%}
+.result-card h2{font-size:1.9rem;margin-bottom:7px}
+.winner-name{font-size:1.2rem;color:var(--acc);font-weight:700;margin-bottom:20px}
+.score-table{width:100%;border-collapse:collapse;margin-bottom:20px}
+.score-table td{padding:7px 11px;font-size:.88rem}
+.score-table tr:not(:last-child) td{border-bottom:1px solid var(--border)}
+
+/* key config */
+.key-config{width:100%;max-width:480px}
+.key-row{display:flex;align-items:center;justify-content:space-between;
+         padding:9px 0;border-bottom:1px solid var(--border);font-size:.88rem}
+.key-row label{color:var(--muted)}
+.key-badge{background:var(--surf);border:1.5px solid var(--border);padding:4px 10px;
+           border-radius:6px;font-family:monospace;font-size:.82rem;cursor:pointer;
+           min-width:52px;text-align:center}
+.key-badge.listening{border-color:var(--acc2);color:var(--acc2)}
+
+/* misc */
+.notice{color:var(--muted);font-size:.83rem;margin:6px 0}
+.error-msg{color:var(--acc2);font-size:.83rem;margin:5px 0;min-height:18px}
+hr{border:none;border-top:1px solid var(--border);width:100%;margin:18px 0}
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════ LOBBY -->
+<div id="lobbyScreen" class="screen active">
+  <div class="logo">🎮 MultiGame</div>
+  <div class="subtitle">Play online — mix humans and bots however you like</div>
+
+  <div class="game-cards">
+    <div class="game-card sel" data-type="crash_bash" onclick="selectGame('crash_bash',this)">
+      <div class="icon">⚽</div>
+      <h3>Crash Bash</h3>
+      <p>Guard your goal. 4 balls, 20 pts. Last standing wins.</p>
+    </div>
+    <div class="game-card" data-type="tnt_battle" onclick="selectGame('tnt_battle',this)">
+      <div class="icon">💥</div>
+      <h3>TNT Battle</h3>
+      <p>Throw crates at enemies. 100 HP. Explosive chaos.</p>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('create',this)">Create Game</button>
+    <button class="tab"        onclick="switchTab('join',this)">Join Room</button>
+  </div>
+
+  <!-- ── CREATE panel ── -->
+  <div id="createPanel" style="width:100%;max-width:500px">
+
+    <div class="section">
+      <label>Your name</label>
+      <input type="text" id="createName" placeholder="Enter your name" maxlength="18" value="Player">
+    </div>
+
+    <!-- ── SLOT CONFIGURATOR ── -->
+    <div class="section">
+      <label>Configure players (click to toggle human ↔ bot)</label>
+    </div>
+    <div class="slot-grid" id="slotGrid"></div>
+    <div class="slot-legend">
+      <span><span class="leg-dot" style="background:var(--acc)"></span>Human slot</span>
+      <span><span class="leg-dot" style="background:#d4943c"></span>Bot slot</span>
+      <span><span class="leg-dot" style="background:var(--border)"></span>Unused</span>
+    </div>
+    <div class="section notice" id="slotSummary"></div>
+
+    <div class="section">
+      <label>Bot difficulty</label>
+      <select id="botDiff">
+        <option value="easy">Easy</option>
+        <option value="medium" selected>Medium</option>
+        <option value="hard">Hard</option>
+      </select>
+    </div>
+
+    <div class="error-msg" id="createError"></div>
+    <button class="btn btn-primary" onclick="createGame()" id="createBtn">Create &amp; Play</button>
+  </div>
+
+  <!-- ── JOIN panel ── -->
+  <div id="joinPanel" style="display:none;width:100%;max-width:500px">
+    <div class="section">
+      <label>Your name</label>
+      <input type="text" id="joinName" placeholder="Enter your name" maxlength="18" value="Player">
+    </div>
+    <div class="section">
+      <label>Room code</label>
+      <input type="text" id="joinCode" placeholder="8-char code" maxlength="8"
+        style="text-transform:uppercase;letter-spacing:3px;font-family:monospace;font-size:1.1rem">
+    </div>
+    <div class="error-msg" id="joinError"></div>
+    <button class="btn btn-primary" onclick="joinByCode()" style="margin-bottom:18px">Join Room</button>
+
+    <hr>
+    <p class="notice" style="margin-bottom:10px">Or pick an open room:</p>
+    <div class="room-list" id="roomList"><p class="notice">Loading…</p></div>
+    <button class="btn btn-secondary" onclick="loadRooms()" style="margin-top:10px">↻ Refresh</button>
+  </div>
+
+  <hr>
+  <button class="btn btn-secondary" onclick="openKeyScreen()">⌨️ Configure Keys</button>
+</div>
+
+<!-- ══════════════════════════════════════ KEY CONFIG -->
+<div id="keyScreen" class="screen">
+  <h2 style="margin-bottom:22px">⌨️ Key Bindings</h2>
+  <div class="key-config" id="keyConfigRows"></div>
+  <div class="btn-row" style="margin-top:22px">
+    <button class="btn btn-secondary" onclick="resetKeys()">Reset defaults</button>
+    <button class="btn btn-primary"   onclick="showScreen('lobbyScreen')">← Back</button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════ WAITING ROOM -->
+<div id="waitScreen" class="screen">
+  <div class="wait-wrap">
+    <div class="room-header">
+      <div style="color:var(--muted);font-size:.75rem;margin-bottom:4px">ROOM CODE — share with friends</div>
+      <div class="room-code" id="displayRoomId">--------</div>
+      <div style="color:var(--muted);font-size:.82rem;margin-top:5px" id="waitGameType"></div>
+    </div>
+
+    <div class="wait-slots" id="waitSlots"></div>
+
+    <div class="notice" id="waitStatus" style="text-align:center;margin-bottom:10px"></div>
+    <div class="countdown" id="countdownEl" style="display:none"></div>
+
+    <div class="btn-row">
+      <button class="btn btn-primary"   id="readyBtn" onclick="sendReady()">✅ Ready</button>
+      <button class="btn btn-secondary" onclick="leaveRoom()">← Leave</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════ GAME -->
+<div id="gameScreen" class="screen">
+  <div class="game-hud">
+    <div class="hud-players" id="hudPlayers"></div>
+    <button class="btn btn-secondary" onclick="leaveGame()"
+            style="padding:5px 13px;font-size:.78rem">✕ Leave</button>
+  </div>
+  <canvas id="gameCanvas" width="800" height="600"></canvas>
+  <div class="mobile-controls" id="mobileControls">
+    <div class="dpad">
+      <div class="dpad-btn up"    id="dbUp">▲</div>
+      <div class="dpad-btn down"  id="dbDown">▼</div>
+      <div class="dpad-btn left"  id="dbLeft">◀</div>
+      <div class="dpad-btn right" id="dbRight">▶</div>
+      <div class="dpad-btn center"></div>
+    </div>
+    <button class="action-btn" id="actionBtn">🎯</button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════ GAME OVER -->
+<div class="overlay" id="gameOverlay">
+  <div class="result-card">
+    <h2>🏆 Game Over</h2>
+    <div class="winner-name" id="winnerName"></div>
+    <table class="score-table" id="scoreTable"></table>
+    <div class="btn-row">
+      <button class="btn btn-primary"   onclick="playAgain()">Play Again</button>
+      <button class="btn btn-secondary" onclick="goLobby()">Lobby</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════ STATE
+const S = {
+  playerId: localStorage.getItem("pid") || rndId(),
+  roomId:   null, gameType: "crash_bash",
+  sse: null, inputLoop: null, lastState: null, keys: {},
+};
+localStorage.setItem("pid", S.playerId);
+
+function rndId(){ return Math.random().toString(36).slice(2,10); }
+
+// ═══════════════════════════════════════════════════════════ SLOT CONFIG
+// slotTypes[i] = "human" | "bot" | "empty"  for i = 0..3
+let slotTypes = ["human","bot","bot","bot"];   // default: 1 human + 3 bots
+
+function initSlots(){
+  slotTypes = ["human","empty","empty","empty"];
+  renderSlots(); updateSlotSummary();
+}
+
+function renderSlots(){
+  const grid = document.getElementById("slotGrid");
+  grid.innerHTML = "";
+  slotTypes.forEach((type, i) => {
+    const cell = document.createElement("div");
+    cell.className = `slot-cell ${type}`;
+    cell.innerHTML = `
+      <div class="slot-icon">${type==="human"?"👤":type==="bot"?"🤖":"➕"}</div>
+      <div class="slot-label">${type==="human"?"Human":type==="bot"?"Bot":"Empty"}</div>`;
+    cell.addEventListener("click", () => cycleSlot(i));
+    grid.appendChild(cell);
+  });
+}
+
+function cycleSlot(i){
+  // slot 0 is always the host (human) – can't change it
+  if(i === 0) return;
+  const order = ["empty","human","bot"];
+  const cur   = slotTypes[i];
+  slotTypes[i] = order[(order.indexOf(cur)+1) % order.length];
+  renderSlots(); updateSlotSummary();
+}
+
+function updateSlotSummary(){
+  const humans = slotTypes.filter(t=>t==="human").length;
+  const bots   = slotTypes.filter(t=>t==="bot").length;
+  const total  = humans + bots;
+  document.getElementById("slotSummary").textContent =
+    `${total} player game · ${humans} human${humans>1?"s":""} · ${bots} bot${bots!==1?"s":""}`;
+}
+
+// ═══════════════════════════════════════════════════════════ NAVIGATION
+function showScreen(id){
+  document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));
+  document.getElementById(id).classList.add("active");
+}
+
+function selectGame(type, el){
+  S.gameType = type;
+  document.querySelectorAll(".game-card").forEach(c=>c.classList.remove("sel"));
+  el.classList.add("sel");
+}
+
+function switchTab(tab, btn){
+  document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
+  btn.classList.add("active");
+  document.getElementById("createPanel").style.display = tab==="create"?"":"none";
+  document.getElementById("joinPanel").style.display   = tab==="join"  ?"":"none";
+  if(tab==="join") loadRooms();
+}
+
+// ═══════════════════════════════════════════════════════════ KEY CONFIG
+const DEFAULT_KEYS = {up:"ArrowUp",down:"ArrowDown",left:"ArrowLeft",right:"ArrowRight",action:" "};
+let keyBindings = JSON.parse(localStorage.getItem("kb")||"null") || {...DEFAULT_KEYS};
+let listeningKey = null;
+
+function openKeyScreen(){ showKeyConfig(); showScreen("keyScreen"); }
+
+function showKeyConfig(){
+  const c = document.getElementById("keyConfigRows");
+  const labels = {up:"Up",down:"Down",left:"Left",right:"Right",action:"Action / Throw"};
+  c.innerHTML = "";
+  for(const [k,label] of Object.entries(labels)){
+    const row = document.createElement("div");
+    row.className = "key-row";
+    row.innerHTML = `<label>${label}</label>
+      <span class="key-badge" id="kb_${k}" onclick="listenKey('${k}')">${fmtKey(keyBindings[k])}</span>`;
+    c.appendChild(row);
+  }
+}
+
+function fmtKey(k){ return k===" "?"Space":k.replace("Arrow","").replace("Key","")||k; }
+
+function listenKey(action){
+  listeningKey = action;
+  const b = document.getElementById(`kb_${action}`);
+  b.textContent = "…"; b.classList.add("listening");
+}
+
+function resetKeys(){
+  keyBindings = {...DEFAULT_KEYS};
+  localStorage.setItem("kb", JSON.stringify(keyBindings));
+  showKeyConfig();
+}
+
+document.addEventListener("keydown", e=>{
+  if(listeningKey){
+    keyBindings[listeningKey] = e.key;
+    localStorage.setItem("kb", JSON.stringify(keyBindings));
+    listeningKey = null; showKeyConfig(); e.preventDefault(); return;
+  }
+  S.keys[e.key] = true;
+}, true);
+document.addEventListener("keyup", e=>{ S.keys[e.key] = false; }, true);
+
+// ═══════════════════════════════════════════════════════════ CREATE
+async function createGame(){
+  const name  = document.getElementById("createName").value.trim()||"Player";
+  const btn   = document.getElementById("createBtn");
+  btn.disabled = true; btn.textContent = "Creating…";
+  document.getElementById("createError").textContent = "";
+
+  const humans     = slotTypes.filter(t=>t==="human").length;
+  const bots       = slotTypes.filter(t=>t==="bot").length;
+  const total      = humans + bots;
+
+  const body = {
+    game_type:      S.gameType,
+    player_name:    name,
+    total_slots:    total,
+    bot_slots:      bots,
+    bot_difficulty: document.getElementById("botDiff").value,
+    player_id:      S.playerId,
+  };
+
+  try{
+    const res  = await fetch("/api/rooms/create",{
+      method:"POST",
+      headers:{"Content-Type":"application/json","X-Player-Id":S.playerId},
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.detail||data.error||"Server error");
+
+    S.roomId = data.room_id;
+    enterRoom(data.room_id, data.status==="playing");
+
+  }catch(e){
+    document.getElementById("createError").textContent = e.message;
+  }finally{
+    btn.disabled = false; btn.textContent = "Create & Play";
+  }
+}
+
+// ═══════════════════════════════════════════════════════════ JOIN
+async function loadRooms(){
+  const list = document.getElementById("roomList");
+  list.innerHTML = '<p class="notice">Loading…</p>';
+  try{
+    const data = await fetch("/api/rooms").then(r=>r.json());
+    if(!data.rooms.length){
+      list.innerHTML = '<p class="notice">No open rooms. Create one!</p>'; return;
+    }
+    list.innerHTML = data.rooms.map(r=>`
+      <div class="room-item">
+        <div>
+          <h4>${r.game_name}</h4>
+          <p>Host: ${r.host_name} · ${r.human_count}/${r.human_slots} humans
+             · ${r.bot_slots} bot${r.bot_slots!==1?"s":""}
+             · ${r.created_ago}s ago</p>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="badge open">Open</span>
+          <button class="btn btn-primary" style="padding:5px 13px;font-size:.78rem"
+                  onclick="joinRoom('${r.room_id}')">Join</button>
+        </div>
+      </div>`).join("");
+  }catch(e){ list.innerHTML = '<p class="notice">Could not load rooms.</p>'; }
+}
+
+async function joinByCode(){
+  const code = document.getElementById("joinCode").value.trim().toLowerCase();
+  const name = document.getElementById("joinName").value.trim()||"Player";
+  if(!code){ document.getElementById("joinError").textContent="Enter a room code"; return; }
+  await joinRoom(code, name);
+}
+
+async function joinRoom(roomId, nameOverride){
+  const name = nameOverride || document.getElementById("joinName").value.trim()||"Player";
+  document.getElementById("joinError").textContent = "";
+  try{
+    const res  = await fetch(`/api/rooms/${roomId}/join`,{
+      method:"POST",
+      headers:{"Content-Type":"application/json","X-Player-Id":S.playerId},
+      body: JSON.stringify({player_name:name, player_id:S.playerId}),
+    });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.detail||data.error||"Could not join");
+    S.roomId = roomId;
+    enterRoom(roomId, data.status==="playing");
+  }catch(e){ document.getElementById("joinError").textContent = e.message; }
+}
+
+// ═══════════════════════════════════════════════════════════ ROOM ENTRY
+function enterRoom(roomId, alreadyPlaying){
+  if(S.sse){ S.sse.close(); S.sse = null; }
+  S.sse = new EventSource(`/api/rooms/${roomId}/stream`);
+  S.sse.onmessage  = onMsg;
+  S.sse.onerror    = ()=>console.warn("SSE reconnecting…");
+
+  document.getElementById("displayRoomId").textContent = roomId.toUpperCase();
+  document.getElementById("waitGameType").textContent  =
+    S.gameType==="crash_bash"?"⚽ Crash Bash":"💥 TNT Battle";
+
+  if(alreadyPlaying){ showScreen("gameScreen"); startInputLoop(); }
+  else { showScreen("waitScreen"); renderWaitSlots([]); }
+}
+
+// ═══════════════════════════════════════════════════════════ WAITING ROOM
+function renderWaitSlots(slots){
+  const c = document.getElementById("waitSlots");
+  if(!slots.length){ c.innerHTML = '<div class="notice">Connecting…</div>'; return; }
+  c.innerHTML = slots.map(s=>{
+    const isYou = s.pid === S.playerId;
+    let cls = "wait-slot";
+    if(s.is_bot)         cls += " bot-slot";
+    else if(s.filled)    cls += " human-filled";
+    if(isYou)            cls = "wait-slot you";
+
+    const icon  = s.is_bot ? "🤖" : s.filled ? "👤" : "⬜";
+    const name  = s.filled ? (s.name+(isYou?" (you)":"")) : "Waiting…";
+    const badge = s.is_bot ? "🤖 Bot"
+                : s.filled ? (s.ready ? "✅ Ready" : "⏳ Waiting")
+                : "";
+    return `<div class="${cls}">
+      <div class="wait-dot"></div>
+      <span class="wait-name">${icon} ${name}</span>
+      <span class="wait-status">${badge}</span>
+    </div>`;
+  }).join("");
+}
+
+let readySent = false;
+async function sendReady(){
+  if(readySent) return;
+  readySent = true;
+  document.getElementById("readyBtn").textContent = "✅ Waiting for others…";
+  document.getElementById("readyBtn").disabled    = true;
+  await fetch(`/api/rooms/${S.roomId}/ready`,{
+    method:"POST",
+    headers:{"Content-Type":"application/json","X-Player-Id":S.playerId},
+    body: JSON.stringify({player_id:S.playerId}),
+  });
+}
+
+function leaveRoom(){
+  if(S.sse){ S.sse.close(); S.sse = null; }
+  readySent = false;
+  document.getElementById("readyBtn").textContent = "✅ Ready";
+  document.getElementById("readyBtn").disabled    = false;
+  showScreen("lobbyScreen");
+}
+
+// ═══════════════════════════════════════════════════════════ SSE HANDLER
+function onMsg(ev){
+  let msg; try{ msg = JSON.parse(ev.data); }catch{ return; }
+  const evt = msg._event;
+
+  if(evt==="waiting"||evt==="player_joined"||evt==="ready_update"){
+    renderWaitSlots(msg.slots||[]);
+    if(msg.status==="playing"){ showScreen("gameScreen"); startInputLoop(); }
+    const humans = (msg.slots||[]).filter(s=>!s.is_bot);
+    const filled = humans.filter(s=>s.filled).length;
+    const total  = humans.length;
+    document.getElementById("waitStatus").textContent =
+      `${filled}/${total} humans joined`;
+    return;
+  }
+
+  if(evt==="game_starting"){ showScreen("gameScreen"); startInputLoop(); }
+
+  if(msg.game_type){
+    S.lastState = msg;
+    renderGame(msg); updateHud(msg);
+    if(msg.game_over){ stopInputLoop(); showGameOver(msg); }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════ INPUT
+function buildInput(){
+  const k = S.keys;
+  return {
+    up:     !!(k[keyBindings.up]),    down:  !!(k[keyBindings.down]),
+    left:   !!(k[keyBindings.left]),  right: !!(k[keyBindings.right]),
+    action: !!(k[keyBindings.action]),
+  };
+}
+
+function startInputLoop(){
+  stopInputLoop();
+  S.inputLoop = setInterval(()=>{
+    if(!S.roomId) return;
+    fetch(`/api/rooms/${S.roomId}/input`,{
+      method:"POST",
+      headers:{"Content-Type":"application/json","X-Player-Id":S.playerId},
+      body: JSON.stringify({input:buildInput(), player_id:S.playerId}),
+    }).catch(()=>{});
+  }, 33);
+}
+
+function stopInputLoop(){
+  if(S.inputLoop){ clearInterval(S.inputLoop); S.inputLoop = null; }
+}
+
+// ═══════════════════════════════════════════════════════════ MOBILE
+function wireMobile(id, key){
+  const el = document.getElementById(id);
+  if(!el) return;
+  const set = v=>{
+    el.classList.toggle("pressed", v);
+    S.keys[keyBindings[key]] = v;
+  };
+  el.addEventListener("touchstart", e=>{ e.preventDefault(); set(true);  },{passive:false});
+  el.addEventListener("touchend",   e=>{ e.preventDefault(); set(false); },{passive:false});
+  el.addEventListener("mousedown",  ()=>set(true));
+  el.addEventListener("mouseup",    ()=>set(false));
+  el.addEventListener("mouseleave", ()=>set(false));
+}
+wireMobile("dbUp","up"); wireMobile("dbDown","down");
+wireMobile("dbLeft","left"); wireMobile("dbRight","right");
+wireMobile("actionBtn","action");
+document.getElementById("mobileControls").style.display =
+  window.matchMedia("(pointer:coarse)").matches ? "flex" : "none";
+
+// ═══════════════════════════════════════════════════════════ CANVAS
+const canvas = document.getElementById("gameCanvas");
+const ctx    = canvas.getContext("2d");
+
+function resizeCanvas(W, H){
+  const mxW = Math.min(window.innerWidth, 800);
+  const mxH = window.innerHeight - 110;
+  const sc  = Math.min(mxW/W, mxH/H, 1);
+  canvas.style.width  = Math.floor(W*sc)+"px";
+  canvas.style.height = Math.floor(H*sc)+"px";
+  canvas.width = W; canvas.height = H;
+}
+
+function renderGame(s){
+  resizeCanvas(s.arena_w||800, s.arena_h||600);
+  if(s.game_type==="crash_bash") renderCrashBash(s);
+  if(s.game_type==="tnt_battle") renderTntBattle(s);
+}
+
+// ── helpers ──
+function rr(x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.lineTo(x+w-r,y); ctx.arcTo(x+w,y,x+w,y+r,r);
+  ctx.lineTo(x+w,y+h-r); ctx.arcTo(x+w,y+h,x+w-r,y+h,r);
+  ctx.lineTo(x+r,y+h); ctx.arcTo(x,y+h,x,y+h-r,r);
+  ctx.lineTo(x,y+r); ctx.arcTo(x,y,x+r,y,r);
+  ctx.closePath();
+}
+
+function drawPlayerLabel(p){
+  ctx.fillStyle = "#000";
+  ctx.font      = "bold 13px sans-serif";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText("P"+p.number, p.x+p.size/2, p.y+p.size/2);
+}
+
+// ── CRASH BASH ──
+function renderCrashBash(s){
+  const W=s.arena_w, H=s.arena_h;
+  ctx.fillStyle="#0a0a14"; ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle="#2a2a3d"; ctx.lineWidth=8; ctx.strokeRect(4,4,W-8,H-8);
+
+  for(const[pid,g] of Object.entries(s.goals||{})){
+    const[gx,gy,gw,gh]=g.rect;
+    ctx.fillStyle=g.color+"44"; ctx.fillRect(gx,gy,gw,gh);
+    ctx.strokeStyle=g.color; ctx.lineWidth=3; ctx.strokeRect(gx,gy,gw,gh);
+  }
+
+  for(const[pid,p] of Object.entries(s.players)){
+    ctx.globalAlpha = p.eliminated ? 0.22 : 1;
+    ctx.fillStyle   = p.color;
+    rr(p.x,p.y,p.size,p.size,6); ctx.fill();
+    if(pid===S.playerId){
+      ctx.strokeStyle="#fff"; ctx.lineWidth=2.5; rr(p.x,p.y,p.size,p.size,6); ctx.stroke();
+    }
+    if(p.stunned){ ctx.fillStyle="rgba(255,255,255,.3)"; rr(p.x,p.y,p.size,p.size,6); ctx.fill(); }
+    ctx.globalAlpha=p.eliminated?0.3:1;
+    drawPlayerLabel(p);
+    ctx.fillStyle="#fff"; ctx.font="11px sans-serif";
+    ctx.fillText(p.eliminated?"OUT":p.score, p.x+p.size/2, p.y+p.size+11);
+    ctx.globalAlpha=1;
+  }
+
+  for(const b of s.balls||[]){
+    const cx=b.x+b.size/2, cy=b.y+b.size/2;
+    ctx.beginPath(); ctx.arc(cx,cy,b.size/2,0,Math.PI*2);
+    ctx.fillStyle="#e0e0e0"; ctx.fill();
+    ctx.beginPath(); ctx.arc(cx-b.size*.15,cy-b.size*.15,b.size*.17,0,Math.PI*2);
+    ctx.fillStyle="#bbb"; ctx.fill();
+  }
+}
+
+// ── TNT BATTLE ──
+function renderTntBattle(s){
+  const W=s.arena_w, H=s.arena_h;
+  ctx.fillStyle="#12122a"; ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle="#c0c0c0"; ctx.lineWidth=3; ctx.strokeRect(8,8,W-16,H-16);
+
+  for(const c of s.pickup_crates||[]){
+    ctx.fillStyle="#a06428"; rr(c.x,c.y,c.size,c.size,4); ctx.fill();
+    ctx.strokeStyle="#8c5020"; ctx.lineWidth=1.5; rr(c.x,c.y,c.size,c.size,4); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(c.x+c.size/2,c.y); ctx.lineTo(c.x+c.size/2,c.y+c.size);
+    ctx.moveTo(c.x,c.y+c.size/2); ctx.lineTo(c.x+c.size,c.y+c.size/2);
+    ctx.stroke();
+    const glow=Math.abs(Math.sin((S.lastState?.tick||0)*.05))*.28+.08;
+    ctx.beginPath(); ctx.arc(c.x+c.size/2,c.y+c.size/2,c.size/2+4,0,Math.PI*2);
+    ctx.fillStyle=`rgba(200,150,60,${glow})`; ctx.fill();
+  }
+
+  for(const tc of s.thrown_crates||[]){
+    ctx.save();
+    ctx.translate(tc.x+tc.size/2, tc.y+tc.size/2);
+    ctx.rotate(tc.rotation*Math.PI/180);
+    ctx.fillStyle="#b47832"; rr(-tc.size/2,-tc.size/2,tc.size,tc.size,3); ctx.fill();
+    ctx.strokeStyle="#8c5020"; ctx.lineWidth=1.5; rr(-tc.size/2,-tc.size/2,tc.size,tc.size,3); ctx.stroke();
+    ctx.restore();
+  }
+
+  for(const ex of s.explosions||[]){
+    const r = ex.radius*(1-ex.frac);
+    if(r<=0) continue;
+    for(let i=2;i>=0;i--){
+      const gr=r+i*10;
+      const grd=ctx.createRadialGradient(ex.x,ex.y,0,ex.x,ex.y,gr);
+      grd.addColorStop(0,`rgba(255,200,50,${ex.frac/(i+1)})`);
+      grd.addColorStop(.5,`rgba(255,100,20,${ex.frac/(i+2)})`);
+      grd.addColorStop(1,"rgba(200,50,0,0)");
+      ctx.beginPath(); ctx.arc(ex.x,ex.y,gr,0,Math.PI*2);
+      ctx.fillStyle=grd; ctx.fill();
+    }
+  }
+
+  for(const[pid,p] of Object.entries(s.players)){
+    ctx.globalAlpha=p.eliminated?.18:1;
+    ctx.fillStyle=p.color; rr(p.x,p.y,p.size,p.size,6); ctx.fill();
+    if(pid===S.playerId){
+      ctx.strokeStyle="#fff"; ctx.lineWidth=2.5; rr(p.x,p.y,p.size,p.size,6); ctx.stroke();
+    }
+    if(!p.eliminated){
+      const hpW=p.size*(p.hp/p.max_hp);
+      const hpc=p.hp>60?"#3db83d":p.hp>25?"#d4b43c":"#d43c3c";
+      ctx.fillStyle="#333"; ctx.fillRect(p.x,p.y-10,p.size,6);
+      ctx.fillStyle=hpc;    ctx.fillRect(p.x,p.y-10,hpW,6);
+      if(p.held_crate){ ctx.fillStyle="#a06428"; ctx.fillRect(p.x+p.size/2-8,p.y-24,16,14); }
+    }
+    ctx.globalAlpha=1;
+    drawPlayerLabel(p);
+  }
+}
+
+// ── HUD ──
+function updateHud(s){
+  document.getElementById("hudPlayers").innerHTML =
+    Object.values(s.players).map(p=>{
+      const val  = s.game_type==="crash_bash" ? p.score : p.hp+" HP";
+      const elim = p.eliminated?" hud-elim":"";
+      const bot  = p.is_bot===true ? `<span class="hud-bot">BOT</span>` : "";
+      return `<div class="hud-player${elim}">
+        <div class="hud-color" style="background:${p.color}"></div>
+        <span>P${p.number}${bot}</span>
+        <span class="hud-score">${p.eliminated?"OUT":val}</span>
+      </div>`;
+    }).join("");
+}
+
+// ═══════════════════════════════════════════════════════════ GAME OVER
+function showGameOver(s){
+  const winP = s.winner && s.players[s.winner];
+  document.getElementById("winnerName").textContent =
+    winP ? (s.winner===S.playerId ? "🎉 You win!" :
+            (winP.is_bot ? `Bot P${winP.number} wins` : `Player ${winP.number} wins`))
+         : "Draw";
+
+  const rows = Object.values(s.players)
+    .sort((a,b)=> s.game_type==="crash_bash" ? b.score-a.score : b.hp-a.hp)
+    .map((p,i)=>{
+      const medal=["🥇","🥈","🥉",""][i]||"";
+      const val  = s.game_type==="crash_bash" ? `${p.score} pts` : `${p.hp} HP`;
+      const you  = p.player_id===S.playerId?" (you)":"";
+      const bot  = p.is_bot?" 🤖":"";
+      return `<tr>
+        <td>${medal}</td>
+        <td style="color:${p.color}">P${p.number}${bot}${you}</td>
+        <td style="text-align:right;font-weight:700">${val}</td>
+      </tr>`;
+    }).join("");
+
+  document.getElementById("scoreTable").innerHTML = rows;
+  document.getElementById("gameOverlay").classList.add("show");
+}
+
+function playAgain(){
+  document.getElementById("gameOverlay").classList.remove("show");
+  stopInputLoop();
+  if(S.sse){ S.sse.close(); S.sse=null; }
+  S.roomId=null; showScreen("lobbyScreen");
+}
+function goLobby(){ playAgain(); }
+function leaveGame(){
+  stopInputLoop();
+  if(S.sse){ S.sse.close(); S.sse=null; }
+  S.roomId=null;
+  document.getElementById("gameOverlay").classList.remove("show");
+  showScreen("lobbyScreen");
+}
+
+// ═══════════════════════════════════════════════════════════ INIT
+initSlots();
+</script>
+</body>
+</html>
