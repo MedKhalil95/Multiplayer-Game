@@ -122,6 +122,50 @@ input[type=text]:focus,select:focus{border-color:var(--acc)}
 .hud-elim{opacity:.3;text-decoration:line-through}
 .hud-bot{font-size:.68rem;color:var(--muted)}
 
+/* fullscreen button – large enough to tap on mobile (44px min) */
+.fs-btn{background:rgba(255,255,255,.06);border:1.5px solid var(--border);
+        color:var(--muted);border-radius:8px;
+        width:40px;height:40px;display:flex;align-items:center;justify-content:center;
+        cursor:pointer;flex-shrink:0;transition:border-color .15s,background .15s;
+        -webkit-tap-highlight-color:transparent;touch-action:manipulation}
+.fs-btn:hover,.fs-btn:active{border-color:var(--acc);background:rgba(108,99,255,.18);color:var(--text)}
+.fs-btn svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
+
+/* ── Real fullscreen (Chrome/Firefox/Android) ── */
+:fullscreen      #gameScreen,
+:-webkit-full-screen #gameScreen,
+:-moz-full-screen    #gameScreen{
+  display:flex;flex-direction:column;
+  width:100vw;height:100dvh;background:#0a0a10;overflow:hidden}
+
+:fullscreen      .game-hud,
+:-webkit-full-screen .game-hud,
+:-moz-full-screen    .game-hud{max-width:100%;width:100%}
+
+:fullscreen      #gameCanvas,
+:-webkit-full-screen #gameCanvas,
+:-moz-full-screen    #gameCanvas{
+  flex:1;width:100% !important;height:0 !important;
+  max-width:100vw !important;max-height:none !important}
+
+:fullscreen      .mobile-controls,
+:-webkit-full-screen .mobile-controls,
+:-moz-full-screen    .mobile-controls{max-width:100%}
+
+/* ── Fake fullscreen fallback (iOS Safari) ──
+   Applied via JS class .fake-fs on #gameScreen when API is unavailable */
+#gameScreen.fake-fs{
+  position:fixed;inset:0;z-index:999;
+  display:flex;flex-direction:column;
+  width:100vw;height:100dvh;background:#0a0a10;overflow:hidden}
+#gameScreen.fake-fs .game-hud{max-width:100%;width:100%}
+#gameScreen.fake-fs #gameCanvas{
+  flex:1;width:100% !important;height:0 !important;
+  max-width:100vw !important;max-height:none !important}
+#gameScreen.fake-fs .mobile-controls{max-width:100%}
+/* hide body scroll while fake-fs is active */
+body.fs-open{overflow:hidden;position:fixed;width:100%}
+
 /* mobile controls */
 .mobile-controls{width:100%;max-width:800px;display:flex;
                  justify-content:space-between;align-items:center;
@@ -285,8 +329,17 @@ hr{border:none;border-top:1px solid var(--border);width:100%;margin:18px 0}
 <div id="gameScreen" class="screen">
   <div class="game-hud">
     <div class="hud-players" id="hudPlayers"></div>
-    <button class="btn btn-secondary" onclick="leaveGame()"
-            style="padding:5px 13px;font-size:.78rem">✕ Leave</button>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="fs-btn" id="fsBtn" onclick="toggleFullscreen()" title="Fullscreen" aria-label="Toggle fullscreen">
+        <svg id="fsIcon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <!-- expand arrows (default state) -->
+          <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
+          <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
+        </svg>
+      </button>
+      <button class="btn btn-secondary" onclick="leaveGame()"
+              style="padding:5px 13px;font-size:.78rem">✕ Leave</button>
+    </div>
   </div>
   <canvas id="gameCanvas" width="800" height="600"></canvas>
   <div class="mobile-controls" id="mobileControls">
@@ -653,13 +706,154 @@ const canvas = document.getElementById("gameCanvas");
 const ctx    = canvas.getContext("2d");
 
 function resizeCanvas(W, H){
-  const mxW = Math.min(window.innerWidth, 800);
-  const mxH = window.innerHeight - 110;
-  const sc  = Math.min(mxW/W, mxH/H, 1);
-  canvas.style.width  = Math.floor(W*sc)+"px";
-  canvas.style.height = Math.floor(H*sc)+"px";
-  canvas.width = W; canvas.height = H;
+  const isFS  = _isFullscreen();
+
+  // On mobile, window.innerHeight includes the browser chrome (address bar).
+  // visualViewport.height is the actual visible area — use it when available.
+  const vvW   = window.visualViewport ? window.visualViewport.width  : window.innerWidth;
+  const vvH   = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+
+  const hudH  = document.querySelector(".game-hud")?.offsetHeight || 44;
+  const mobEl = document.getElementById("mobileControls");
+  const mobH  = (mobEl && mobEl.style.display !== "none") ? (mobEl.offsetHeight || 0) : 0;
+
+  const mxW   = isFS ? vvW  : Math.min(vvW, 800);
+  const mxH   = isFS ? (vvH - hudH - mobH) : (vvH - 110);
+
+  const sc    = Math.min(mxW / W, mxH / H);
+  canvas.style.width  = Math.floor(W * sc) + "px";
+  canvas.style.height = Math.floor(H * sc) + "px";
+  canvas.width  = W;
+  canvas.height = H;
 }
+
+// ── fullscreen ────────────────────────────────────────────────────
+// Strategy:
+//   1. Try the real Fullscreen API (Chrome, Firefox, Android Chrome)
+//   2. If unavailable (iOS Safari), apply a CSS fake-fullscreen class
+//      that uses position:fixed to cover the viewport instead.
+//
+// iOS Safari note: Apple does NOT support requestFullscreen on arbitrary
+// elements as of iOS 17. The fake-fs fallback gives the same visual result.
+
+const _fsSupported = !!(
+  document.documentElement.requestFullscreen ||
+  document.documentElement.webkitRequestFullscreen ||
+  document.documentElement.mozRequestFullScreen
+);
+
+// Track fake-fs state separately from the real API
+let _fakeFS = false;
+
+function toggleFullscreen(){
+  const el   = document.getElementById("gameScreen");
+  const inFS = _isFullscreen();
+
+  if(!inFS){
+    // ── enter fullscreen ────────────────────────────────────────
+    if(_fsSupported){
+      // Real API: request on the element itself (works on Android Chrome)
+      // Fall back to document.documentElement if element request fails
+      const req = el.requestFullscreen       ||
+                  el.webkitRequestFullscreen  ||
+                  el.mozRequestFullScreen;
+      if(req){
+        req.call(el).catch(() => {
+          // Element request blocked (some browsers) – try document root
+          const req2 = document.documentElement.requestFullscreen ||
+                       document.documentElement.webkitRequestFullscreen;
+          if(req2) req2.call(document.documentElement).catch(_enterFakeFS);
+        });
+        return;
+      }
+    }
+    // Fallback for iOS Safari and anything else
+    _enterFakeFS();
+
+  } else {
+    // ── exit fullscreen ──────────────────────────────────────────
+    if(_fakeFS){
+      _exitFakeFS();
+    } else {
+      const exit = document.exitFullscreen        ||
+                   document.webkitExitFullscreen  ||
+                   document.mozCancelFullScreen   ||
+                   document.msExitFullscreen;
+      if(exit) exit.call(document);
+    }
+  }
+}
+
+function _isFullscreen(){
+  return _fakeFS || !!(
+    document.fullscreenElement ||
+    document.webkitFullscreenElement ||
+    document.mozFullScreenElement
+  );
+}
+
+function _enterFakeFS(){
+  _fakeFS = true;
+  document.getElementById("gameScreen").classList.add("fake-fs");
+  document.body.classList.add("fs-open");
+  // Scroll to top so the fixed element starts at 0,0
+  window.scrollTo(0, 0);
+  _updateFsBtn();
+  setTimeout(() => { if(S.lastState) renderGame(S.lastState); }, 60);
+}
+
+function _exitFakeFS(){
+  _fakeFS = false;
+  document.getElementById("gameScreen").classList.remove("fake-fs");
+  document.body.classList.remove("fs-open");
+  _updateFsBtn();
+  setTimeout(() => { if(S.lastState) renderGame(S.lastState); }, 60);
+}
+
+// SVG paths: expand ↔ compress
+const _SVG_EXPAND  = '<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>';
+const _SVG_COMPRESS= '<polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="10" y1="14" x2="3" y2="21"/><line x1="21" y1="3" x2="14" y2="10"/>';
+
+function _updateFsBtn(){
+  const inFS = _isFullscreen();
+  const icon = document.getElementById("fsIcon");
+  const btn  = document.getElementById("fsBtn");
+  if(icon) icon.innerHTML = inFS ? _SVG_COMPRESS : _SVG_EXPAND;
+  if(btn)  btn.title      = inFS ? "Exit fullscreen" : "Fullscreen";
+  if(S.lastState) renderGame(S.lastState);
+}
+
+// Real fullscreen change events (fired by the browser API)
+document.addEventListener("fullscreenchange",       _updateFsBtn);
+document.addEventListener("webkitfullscreenchange", _updateFsBtn);
+document.addEventListener("mozfullscreenchange",    _updateFsBtn);
+
+// Exit fake-fs when user presses Escape (mirrors real fullscreen)
+document.addEventListener("keydown", e => {
+  if(e.key === "Escape" && _fakeFS){ _exitFakeFS(); return; }
+  if((e.key === "f" || e.key === "F")){
+    const gs = document.getElementById("gameScreen");
+    if(gs && gs.classList.contains("active")) toggleFullscreen();
+  }
+});
+
+// ── orientation + viewport resize ────────────────────────────────
+// Fires on phone rotation and on-screen-keyboard appearing/hiding.
+// visualViewport is more accurate than window.resize on mobile.
+function _onViewportChange(){
+  if(S.lastState) renderGame(S.lastState);
+}
+
+if(window.visualViewport){
+  window.visualViewport.addEventListener("resize",  _onViewportChange);
+  window.visualViewport.addEventListener("scroll",  _onViewportChange);
+} else {
+  window.addEventListener("resize",             _onViewportChange);
+}
+window.addEventListener("orientationchange", () => {
+  // Give the browser 200ms to finish rotating before recalculating
+  setTimeout(_onViewportChange, 200);
+});
 
 function renderGame(s){
   resizeCanvas(s.arena_w||800, s.arena_h||600);
