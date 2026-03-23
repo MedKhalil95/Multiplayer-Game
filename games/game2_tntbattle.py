@@ -20,13 +20,13 @@ from base_game import BaseHeadlessGame, InputState
 
 # ── constants ─────────────────────────────────────────────────────────
 
-PLAYER_SPEED   = 4          # px/tick
+PLAYER_SPEED   = 7          # px/tick
 PLAYER_SIZE    = 36
 PLAYER_HP      = 100
 CRATE_SIZE     = 32         # pickup crate
 THROWN_SIZE    = 24         # thrown crate
 THROW_POWER    = 15         # initial speed of thrown crate (px/tick)
-CRATE_GRAVITY  = 0.3        # px/tick² applied to thrown crates
+CRATE_GRAVITY  = 0.5        # px/tick² applied to thrown crates
 CRATE_DRAG     = 0.99       # velocity multiplier per tick
 THROW_STUN     = 10         # ticks after throwing
 EXPLODE_RADIUS = 60         # px

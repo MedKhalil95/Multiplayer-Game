@@ -18,7 +18,7 @@ from base_game import BaseHeadlessGame, InputState
 # ── constants ─────────────────────────────────────────────────────────
 
 INITIAL_SCORE = 20          # points each player starts with
-PLAYER_SPEED  = 5           # px / tick  (matches original min(w,h)//160 ≈ 4-5)
+PLAYER_SPEED  = 9           # px / tick  (matches original min(w,h)//160 ≈ 4-5)
 BALL_SPEED    = 5           # px / tick  (original min(w,h)//170 ≈ 4-5)
 PLAYER_SIZE   = 36          # px square
 BALL_SIZE     = 18          # px square  (used as diameter for circle)
