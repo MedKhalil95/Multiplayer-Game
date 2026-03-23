@@ -577,6 +577,9 @@ function enterRoom(roomId, alreadyPlaying){
   S.sse.onmessage  = onMsg;
   S.sse.onerror    = ()=>console.warn("SSE reconnecting…");
 
+  // Always start with a clean ready button regardless of how we got here
+  resetReadyBtn();
+
   document.getElementById("displayRoomId").textContent = roomId.toUpperCase();
   document.getElementById("waitGameType").textContent  =
     S.gameType==="crash_bash"?"⚽ Crash Bash":"💥 TNT Battle";
@@ -610,11 +613,22 @@ function renderWaitSlots(slots){
 }
 
 let readySent = false;
+
+function resetReadyBtn(){
+  readySent = false;
+  const btn = document.getElementById("readyBtn");
+  if(btn){
+    btn.textContent = "✅ Ready";
+    btn.disabled    = false;
+  }
+}
+
 async function sendReady(){
   if(readySent) return;
   readySent = true;
-  document.getElementById("readyBtn").textContent = "✅ Waiting for others…";
-  document.getElementById("readyBtn").disabled    = true;
+  const btn = document.getElementById("readyBtn");
+  btn.textContent = "✅ Waiting for others…";
+  btn.disabled    = true;
   await fetch(`/api/rooms/${S.roomId}/ready`,{
     method:"POST",
     headers:{"Content-Type":"application/json","X-Player-Id":S.playerId},
@@ -624,9 +638,7 @@ async function sendReady(){
 
 function leaveRoom(){
   if(S.sse){ S.sse.close(); S.sse = null; }
-  readySent = false;
-  document.getElementById("readyBtn").textContent = "✅ Ready";
-  document.getElementById("readyBtn").disabled    = false;
+  resetReadyBtn();
   showScreen("lobbyScreen");
 }
 
@@ -1019,7 +1031,9 @@ function playAgain(){
   document.getElementById("gameOverlay").classList.remove("show");
   stopInputLoop();
   if(S.sse){ S.sse.close(); S.sse=null; }
-  S.roomId=null; showScreen("lobbyScreen");
+  S.roomId=null;
+  resetReadyBtn();
+  showScreen("lobbyScreen");
 }
 function goLobby(){ playAgain(); }
 function leaveGame(){
@@ -1027,6 +1041,7 @@ function leaveGame(){
   if(S.sse){ S.sse.close(); S.sse=null; }
   S.roomId=null;
   document.getElementById("gameOverlay").classList.remove("show");
+  resetReadyBtn();
   showScreen("lobbyScreen");
 }
 
