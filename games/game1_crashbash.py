@@ -7,6 +7,7 @@
 #   • Each player starts with INITIAL_SCORE = 20 points (configurable).
 #   • Reach 0 → eliminated.  Last player alive wins.
 #   • Players can deflect balls by moving into them (push influence preserved).
+#   • Ball speed starts slow and increases each time a player hits it.
 #
 # Nothing in this file imports pygame.display / pygame.draw / pygame.Surface.
 # pygame.Rect is used only for AABB collision math (pure data).
@@ -19,7 +20,9 @@ from base_game import BaseHeadlessGame, InputState
 
 INITIAL_SCORE = 20          # points each player starts with
 PLAYER_SPEED  = 9           # px / tick  (matches original min(w,h)//160 ≈ 4-5)
-BALL_SPEED    = 5           # px / tick  (original min(w,h)//170 ≈ 4-5)
+BALL_SPEED_START = 3.5      # starting speed (slower for early game)
+BALL_SPEED_MAX = 8.0        # maximum speed after many hits
+BALL_SPEED_INCREMENT = 0.25  # speed increase per player hit
 PLAYER_SIZE   = 36          # px square
 BALL_SIZE     = 18          # px square  (used as diameter for circle)
 GOAL_DEPTH    = 20          # px – how deep the scoring strip is
@@ -124,6 +127,8 @@ class CBBall:
         CBBall._ctr += 1
         self.ball_id = f"ball_{CBBall._ctr}"
         self.size    = BALL_SIZE
+        self.hit_count = 0          # track how many times ball has been hit by players
+        self.current_speed = BALL_SPEED_START
         self._reset(arena_w, arena_h)
 
     def _reset(self, arena_w: int, arena_h: int):
@@ -133,13 +138,29 @@ class CBBall:
         self.x  = float(random.randint(cx - sx, cx + sx))
         self.y  = float(random.randint(cy - sy, cy + sy))
         angle   = random.uniform(0, 2 * math.pi)
-        self.dx = math.cos(angle) * BALL_SPEED
-        self.dy = math.sin(angle) * BALL_SPEED
+        self.current_speed = BALL_SPEED_START
+        self.dx = math.cos(angle) * self.current_speed
+        self.dy = math.sin(angle) * self.current_speed
         self._arena_w = arena_w
         self._arena_h = arena_h
 
     def reset(self):
+        """Reset ball position and speed after scoring"""
+        self.hit_count = 0
         self._reset(self._arena_w, self._arena_h)
+
+    def increase_speed(self):
+        """Increase ball speed when hit by a player"""
+        self.hit_count += 1
+        # Speed increases with each hit, up to maximum
+        self.current_speed = min(BALL_SPEED_MAX, 
+                                 BALL_SPEED_START + (self.hit_count * BALL_SPEED_INCREMENT))
+        
+        # Normalize current velocity and apply new speed
+        current_magnitude = math.hypot(self.dx, self.dy)
+        if current_magnitude > 0:
+            self.dx = (self.dx / current_magnitude) * self.current_speed
+            self.dy = (self.dy / current_magnitude) * self.current_speed
 
     @property
     def cx(self): return self.x + self.size / 2
@@ -152,6 +173,8 @@ class CBBall:
             "x":       round(self.x, 1),
             "y":       round(self.y, 1),
             "size":    self.size,
+            "speed":   round(self.current_speed, 1),  # for debugging/UI
+            "hit_count": self.hit_count,
         }
 
 
@@ -215,7 +238,7 @@ class CrashBashGame(BaseHeadlessGame):
                         "side":      p.side,
                         "score":     p.score,
                     })
-                    ball.reset()
+                    ball.reset()  # Reset speed to starting value
 
                     if p.score <= 0:
                         p.score      = 0
@@ -313,6 +336,9 @@ class CrashBashGame(BaseHeadlessGame):
             # Separate ball from player
             ball.x += nx * 6
             ball.y += ny * 6
+
+            # Increase ball speed when hit by player
+            ball.increase_speed()
 
             p.stunned = STUN_TICKS
             break   # one player collision per ball per tick

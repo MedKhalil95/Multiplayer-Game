@@ -36,7 +36,7 @@ MAX_CRATES     = 8
 CRATE_SPAWN_LO = 120        # ticks (2 s at 60 tps)
 CRATE_SPAWN_HI = 240        # 4 s
 
-PLAYER_COLORS = ["#DC5050", "#5050DC", "#50C864", "#DCDC50"]
+PLAYER_COLORS = ["#5050DC", "#50C864", "#DCDC50","#DC5050"]
 
 
 # ── spawn positions (mirrors original Player.__init__) ────────────────

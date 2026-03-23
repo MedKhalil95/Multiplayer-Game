@@ -77,25 +77,28 @@ class BotAI:
 #   • If no threatening ball, stay near the centre of the goal.
 
 class CrashBashBot(BotAI):
-
+    def __init__(self, bot_id: str, difficulty: str = "medium"):
+        super().__init__(bot_id, difficulty)
+        self._target_x = None  # smoothed target position
+        self._target_y = None
+        self._smooth_factor = 0.15  # how quickly bot moves toward target
+        
     def _think(self, state: dict) -> InputState:
         me = self._my(state)
         if me is None or me.get("eliminated"):
             return InputState.neutral(self.bot_id)
 
         side = me.get("side", "bottom")
-        mx   = me["x"] + me.get("size", 36) / 2   # my centre X
-        my_  = me["y"] + me.get("size", 36) / 2   # my centre Y
+        mx   = me["x"] + me.get("size", 36) / 2
+        my_  = me["y"] + me.get("size", 36) / 2
 
         balls = state.get("balls", [])
         if not balls:
             return InputState.neutral(self.bot_id)
 
-        # Pick most threatening ball: closest to my goal strip
+        # Pick most threatening ball
         goal_rect = state.get("goals", {}).get(self.bot_id, {}).get("rect", [0,0,0,0])
         gx, gy, gw, gh = goal_rect
-
-        # goal centre
         gcx = gx + gw / 2
         gcy = gy + gh / 2
 
@@ -105,20 +108,37 @@ class CrashBashBot(BotAI):
         bcx = best_ball["x"] + best_ball.get("size", 18) / 2
         bcy = best_ball["y"] + best_ball.get("size", 18) / 2
 
-        # Decide movement: only move on the axis that matters
+        # Calculate desired position (aligned with ball)
         if side in ("top", "bottom"):
-            # move left/right to align X with ball X
-            diff = bcx - mx
+            desired_x = bcx - me.get("size", 36) / 2
+            # Add some randomness based on difficulty
+            if random.random() < self._noise:
+                desired_x += random.uniform(-20, 20)
+            
+            # Smooth movement (prevents instant teleportation)
+            if self._target_x is None:
+                self._target_x = desired_x
+            else:
+                self._target_x += (desired_x - self._target_x) * self._smooth_factor
+            
+            diff = self._target_x - mx
             return InputState(self.bot_id,
                               left  = diff < -4,
                               right = diff >  4)
         else:
-            # move up/down to align Y with ball Y
-            diff = bcy - my_
+            desired_y = bcy - me.get("size", 36) / 2
+            if random.random() < self._noise:
+                desired_y += random.uniform(-20, 20)
+            
+            if self._target_y is None:
+                self._target_y = desired_y
+            else:
+                self._target_y += (desired_y - self._target_y) * self._smooth_factor
+            
+            diff = self._target_y - my_
             return InputState(self.bot_id,
                               up   = diff < -4,
                               down = diff >  4)
-
 
 # ── TNT Battle bot ─────────────────────────────────────────────────────
 #
@@ -129,78 +149,31 @@ class CrashBashBot(BotAI):
 #   • Dodge: if a thrown crate is heading toward us, move perpendicular.
 
 class TntBattleBot(BotAI):
-
-    def _think(self, state: dict) -> InputState:
-        me = self._my(state)
-        if me is None or me.get("eliminated"):
-            return InputState.neutral(self.bot_id)
-
-        mx, my_ = me["x"] + me.get("size",36)/2, me["y"] + me.get("size",36)/2
-        holding  = me.get("held_crate", False)
-        stunned  = me.get("stunned", False)
-        enemies  = self._others(state)
-
-        if stunned:
-            return InputState.neutral(self.bot_id)
-
-        # ── dodge incoming crates ──────────────────────────────────────
-        dodge_x, dodge_y = 0.0, 0.0
-        for tc in state.get("thrown_crates", []):
-            if tc.get("owner_id") == self.bot_id:
-                continue
-            dx = tc["x"] - mx
-            dy = tc["y"] - my_
-            if dist(tc["x"], tc["y"], mx, my_) < 100:
-                # move perpendicular to incoming vector
-                dodge_x = -dy
-                dodge_y =  dx
-
-        if math.hypot(dodge_x, dodge_y) > 0:
-            # normalise
-            n = math.hypot(dodge_x, dodge_y)
-            return InputState(self.bot_id,
-                              left  = dodge_x / n < -0.3,
-                              right = dodge_x / n >  0.3,
-                              up    = dodge_y / n < -0.3,
-                              down  = dodge_y / n >  0.3)
-
-        # ── go pick up a crate ────────────────────────────────────────
-        if not holding:
-            crates = state.get("pickup_crates", [])
-            if crates:
-                nearest = min(crates, key=lambda c: dist(c["x"], c["y"], mx, my_))
-                return self._move_toward(nearest["x"], nearest["y"], mx, my_)
-            # no crates – wander toward centre
-            return self._move_toward(self.ARENA_W / 2, self.ARENA_H / 2, mx, my_)
-
-        # ── holding crate: hunt nearest enemy ────────────────────────
-        if not enemies:
-            return InputState.neutral(self.bot_id)
-
-        target = min(enemies, key=lambda p: dist(p["x"], p["y"], mx, my_))
-        tx     = target["x"] + target.get("size", 36) / 2
-        ty     = target["y"] + target.get("size", 36) / 2
-        d      = dist(tx, ty, mx, my_)
-
-        throw_now = d < 160 or (self.difficulty == "hard" and d < 240)
-
-        inp = self._move_toward(tx, ty, mx, my_)
-        return InputState(self.bot_id,
-                          up     = inp.up,
-                          down   = inp.down,
-                          left   = inp.left,
-                          right  = inp.right,
-                          action = throw_now)
-
+    def __init__(self, bot_id: str, difficulty: str = "medium"):
+        super().__init__(bot_id, difficulty)
+        self._smooth_x = None
+        self._smooth_y = None
+        self._smooth_factor = 0.2
+        
     def _move_toward(self, tx, ty, mx, my_) -> InputState:
-        dx = tx - mx
-        dy = ty - my_
+        # Smooth target position
+        if self._smooth_x is None:
+            self._smooth_x = tx
+            self._smooth_y = ty
+        else:
+            self._smooth_x += (tx - self._smooth_x) * self._smooth_factor
+            self._smooth_y += (ty - self._smooth_y) * self._smooth_factor
+        
+        dx = self._smooth_x - mx
+        dy = self._smooth_y - my_
+        
+        # Add small random deadzone based on difficulty
+        deadzone = 8 if self.difficulty == "easy" else 4
         return InputState(self.bot_id,
-                          left  = dx < -8,
-                          right = dx >  8,
-                          up    = dy < -8,
-                          down  = dy >  8)
-
+                          left  = dx < -deadzone,
+                          right = dx > deadzone,
+                          up    = dy < -deadzone,
+                          down  = dy > deadzone)
     # expose arena size for wander target
     ARENA_W = 800
     ARENA_H = 600
