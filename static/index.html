@@ -1013,6 +1013,28 @@ function renderTntBattle(s){
     ctx.fillStyle=`rgba(200,150,60,${glow})`; ctx.fill();
   }
 
+  // ── health fruits ──
+  for(const f of s.health_fruits||[]){
+    const pulse = Math.abs(Math.sin((S.lastState?.tick||0)*.07))*.3+.1;
+    // outer glow
+    ctx.beginPath(); ctx.arc(f.x+f.size/2, f.y+f.size/2, f.size/2+5, 0, Math.PI*2);
+    ctx.fillStyle=`rgba(80,200,100,${pulse})`; ctx.fill();
+    // fruit body – circle
+    ctx.beginPath(); ctx.arc(f.x+f.size/2, f.y+f.size/2, f.size/2, 0, Math.PI*2);
+    ctx.fillStyle="#50C864"; ctx.fill();
+    ctx.strokeStyle="#2a8c3a"; ctx.lineWidth=2; ctx.stroke();
+    // small leaf
+    const lx=f.x+f.size/2, ly=f.y+2;
+    ctx.beginPath(); ctx.ellipse(lx+4, ly-2, 5, 3, Math.PI/4, 0, Math.PI*2);
+    ctx.fillStyle="#3db83d"; ctx.fill();
+    // ➕ cross inside
+    ctx.strokeStyle="#fff"; ctx.lineWidth=2;
+    ctx.beginPath();
+    ctx.moveTo(f.x+f.size/2, f.y+4); ctx.lineTo(f.x+f.size/2, f.y+f.size-4);
+    ctx.moveTo(f.x+4, f.y+f.size/2); ctx.lineTo(f.x+f.size-4, f.y+f.size/2);
+    ctx.stroke();
+  }
+
   for(const tc of s.thrown_crates||[]){
     ctx.save();
     ctx.translate(tc.x+tc.size/2, tc.y+tc.size/2);

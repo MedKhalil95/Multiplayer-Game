@@ -38,6 +38,13 @@ CRATE_SPAWN_HI = 240        # 4 s
 
 PLAYER_COLORS = ["#5050DC", "#50C864", "#DCDC50","#DC5050"]
 
+# ── health fruit ──────────────────────────────────────────────────────
+FRUIT_SIZE        = 20          # px square
+FRUIT_HEAL        = 30          # HP restored on pickup
+MAX_FRUITS        = 3           # max fruits on screen at once
+FRUIT_SPAWN_LO    = 180         # ticks (~3 s)
+FRUIT_SPAWN_HI    = 360         # ticks (~6 s)
+
 
 # ── spawn positions (mirrors original Player.__init__) ────────────────
 
@@ -218,6 +225,28 @@ class ExplosionLogic:
         }
 
 
+class HealthFruit:
+    """Green fruit that restores HP when a player walks over it."""
+    _ctr = 0
+
+    def __init__(self, x: float, y: float):
+        HealthFruit._ctr += 1
+        self.fruit_id = f"hf_{HealthFruit._ctr}"
+        self.x    = x
+        self.y    = y
+        self.size = FRUIT_SIZE
+        self.heal = FRUIT_HEAL
+
+    def to_dict(self) -> dict:
+        return {
+            "fruit_id": self.fruit_id,
+            "x":        round(self.x, 1),
+            "y":        round(self.y, 1),
+            "size":     self.size,
+            "heal":     self.heal,
+        }
+
+
 # ── main game ─────────────────────────────────────────────────────────
 
 class TnTBattleGame(BaseHeadlessGame):
@@ -237,10 +266,12 @@ class TnTBattleGame(BaseHeadlessGame):
         self.pickup_crates:  list[PickupCrate]    = []
         self.thrown_crates:  list[ThrownCrate]    = []
         self.explosions:     list[ExplosionLogic] = []
+        self.health_fruits:  list[HealthFruit]    = []
         self.hit_events:     list[dict]           = []  # per-tick, for renderer
 
         # Start with a short timer so first crates appear soon
         self.crate_spawn_timer = 60
+        self.fruit_spawn_timer = 240   # first fruit after ~4 s
 
     # ── tick ──────────────────────────────────────────────────────────
 
@@ -260,10 +291,25 @@ class TnTBattleGame(BaseHeadlessGame):
             self._try_spawn_crate(alive, W, H)
             self.crate_spawn_timer = random.randint(CRATE_SPAWN_LO, CRATE_SPAWN_HI)
 
+        # 1b. Spawn health fruits ----------------------------------------
+        self.fruit_spawn_timer -= 1
+        if (self.fruit_spawn_timer <= 0 and
+                len(self.health_fruits) < MAX_FRUITS):
+            self._try_spawn_fruit(alive, W, H)
+            self.fruit_spawn_timer = random.randint(FRUIT_SPAWN_LO, FRUIT_SPAWN_HI)
+
         # 2. Move players + pickup / throw logic ------------------------
         for p in alive:
             inp = inputs.get(p.player_id, InputState.neutral(p.player_id))
             self._move_player(p, inp, W, H)
+
+            # pickup health fruit
+            for fruit in self.health_fruits[:]:
+                if self.rects_overlap(p.x, p.y, p.size, p.size,
+                                      fruit.x, fruit.y, fruit.size, fruit.size):
+                    p.hp = min(PLAYER_HP, p.hp + fruit.heal)
+                    self.health_fruits.remove(fruit)
+                    break
 
             # pickup
             if not p.held_crate:
@@ -374,6 +420,19 @@ class TnTBattleGame(BaseHeadlessGame):
                 self.pickup_crates.append(PickupCrate(x, y))
                 return
 
+    def _try_spawn_fruit(self, alive: list, W: int, H: int):
+        """Spawn a health fruit not too close to any live player."""
+        for _ in range(10):
+            x = float(random.randint(60, W - 60))
+            y = float(random.randint(60, H - 60))
+            too_close = any(
+                math.hypot(p.x - x, p.y - y) < 80
+                for p in alive
+            )
+            if not too_close:
+                self.health_fruits.append(HealthFruit(x, y))
+                return
+
     # ── state snapshot ────────────────────────────────────────────────
 
     def get_state(self) -> dict:
@@ -387,6 +446,7 @@ class TnTBattleGame(BaseHeadlessGame):
             "pickup_crates": [c.to_dict() for c in self.pickup_crates],
             "thrown_crates": [c.to_dict() for c in self.thrown_crates],
             "explosions":    [e.to_dict() for e in self.explosions],
+            "health_fruits": [f.to_dict() for f in self.health_fruits],
             "hit_events":    self.hit_events,
             "game_over":     self._over,
             "winner":        self._winner,

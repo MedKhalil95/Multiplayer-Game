@@ -65,17 +65,19 @@ def _player_start(number: int, arena_w: int, arena_h: int):
     """1-indexed.  Returns (x, y, side, movement_axis)."""
     W, H   = arena_w, arena_h
     sz     = PLAYER_SIZE
-    offset = max(80, sz + 40)
+    # Place players very close to their goal strip (just inside the GOAL_DEPTH band)
+    margin = GOAL_DEPTH + sz + 4   # a few px in front of the goal
+
     g      = _goal_size(W, H)
 
     if number == 1:   # top – moves horizontally
-        return (W//2 - sz//2, offset - 40, "top",    "horizontal")
+        return (W//2 - sz//2, margin, "top",    "horizontal")
     if number == 2:   # bottom – moves horizontally
-        return (W//2 - sz//2, H - offset,  "bottom", "horizontal")
+        return (W//2 - sz//2, H - margin - sz,  "bottom", "horizontal")
     if number == 3:   # left – moves vertically
-        return (offset - 40,  H//2 - sz//2, "left",  "vertical")
+        return (margin,  H//2 - sz//2, "left",  "vertical")
     # right
-    return (W - offset, H//2 - sz//2, "right", "vertical")
+    return (W - margin - sz, H//2 - sz//2, "right", "vertical")
 
 
 # ── data classes ──────────────────────────────────────────────────────
@@ -258,6 +260,7 @@ class CrashBashGame(BaseHeadlessGame):
     def _move_player(self, p: CBPlayer, inp: InputState, W: int, H: int):
         g  = _goal_size(W, H)
         sp = PLAYER_SPEED
+        margin = GOAL_DEPTH + p.size + 4
 
         if p.axis == "horizontal":
             # clamp to goal width corridor
@@ -266,8 +269,8 @@ class CrashBashGame(BaseHeadlessGame):
             if inp.left:  p.x -= sp
             if inp.right: p.x += sp
             p.x = self.clamp(p.x, min_x, max_x)
-            # y locked to their row
-            p.y = 64.0 if p.side == "top" else float(H - 64 - p.size)
+            # y locked close to their goal strip
+            p.y = float(margin) if p.side == "top" else float(H - margin - p.size)
 
         else:  # vertical
             min_y = H//2 - g//2
@@ -275,7 +278,7 @@ class CrashBashGame(BaseHeadlessGame):
             if inp.up:   p.y -= sp
             if inp.down: p.y += sp
             p.y = self.clamp(p.y, min_y, max_y)
-            p.x = 64.0 if p.side == "left" else float(W - 64 - p.size)
+            p.x = float(margin) if p.side == "left" else float(W - margin - p.size)
 
     # ── ball physics (mirrors original Ball.update) ────────────────────
 

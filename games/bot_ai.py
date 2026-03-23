@@ -163,10 +163,10 @@ class TntBattleBot(BotAI):
         else:
             self._smooth_x += (tx - self._smooth_x) * self._smooth_factor
             self._smooth_y += (ty - self._smooth_y) * self._smooth_factor
-        
+
         dx = self._smooth_x - mx
         dy = self._smooth_y - my_
-        
+
         # Add small random deadzone based on difficulty
         deadzone = 8 if self.difficulty == "easy" else 4
         return InputState(self.bot_id,
@@ -174,9 +174,56 @@ class TntBattleBot(BotAI):
                           right = dx > deadzone,
                           up    = dy < -deadzone,
                           down  = dy > deadzone)
+
     # expose arena size for wander target
     ARENA_W = 800
     ARENA_H = 600
+
+    def _think(self, state: dict) -> InputState:
+        me = self._my(state)
+        if me is None or me.get("eliminated"):
+            return InputState.neutral(self.bot_id)
+
+        mx = me["x"] + me.get("size", 36) / 2
+        my_ = me["y"] + me.get("size", 36) / 2
+
+        # If not holding a crate, go to nearest pickup crate (or health fruit)
+        if not me.get("held_crate"):
+            # Also pick up health fruits if low on HP
+            targets = []
+            if me.get("hp", 100) < 60:
+                for f in state.get("health_fruits", []):
+                    targets.append((f["x"] + f.get("size", 20) / 2,
+                                    f["y"] + f.get("size", 20) / 2))
+            for c in state.get("pickup_crates", []):
+                targets.append((c["x"] + c.get("size", 32) / 2,
+                                 c["y"] + c.get("size", 32) / 2))
+
+            if targets:
+                tx, ty = min(targets, key=lambda t: dist(mx, my_, t[0], t[1]))
+                return self._move_toward(tx, ty, mx, my_)
+            # Wander toward centre if nothing to pick up
+            return self._move_toward(self.ARENA_W / 2, self.ARENA_H / 2, mx, my_)
+
+        # Holding crate – chase nearest enemy
+        enemies = self._others(state)
+        if not enemies:
+            return InputState.neutral(self.bot_id)
+
+        target = min(enemies, key=lambda p: dist(mx, my_,
+                                                  p["x"] + p.get("size", 36) / 2,
+                                                  p["y"] + p.get("size", 36) / 2))
+        tx = target["x"] + target.get("size", 36) / 2
+        ty = target["y"] + target.get("size", 36) / 2
+        d  = dist(mx, my_, tx, ty)
+
+        # Throw when close enough
+        throw = d < 160
+        inp = self._move_toward(tx, ty, mx, my_)
+        return InputState(self.bot_id,
+                          up=inp.up, down=inp.down,
+                          left=inp.left, right=inp.right,
+                          action=throw)
 
 
 # ── factory ────────────────────────────────────────────────────────────
