@@ -147,6 +147,12 @@ class RoomState:
         # Reset all human ready flags
         for p in self.players.values():
             p["ready"] = False
+        # Flush every input queue so stale keys from the last game
+        # don't bleed into the new one
+        for q in self.input_queues.values():
+            while not q.empty():
+                try:    q.get_nowait()
+                except queue.Empty: break
         # Clear game state
         self.game    = None
         self.bots    = {}
@@ -411,6 +417,7 @@ def rematch(room_id: str,
 
 
 
+@app.post("/api/rooms/{room_id}/input")
 def post_input(room_id: str, body: InputBody,
                x_player_id: Optional[str] = Header(None)):
 

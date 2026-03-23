@@ -68,6 +68,14 @@ input[type=text]:focus,select:focus{border-color:var(--acc)}
 .slot-legend span{display:flex;align-items:center;gap:5px}
 .leg-dot{width:10px;height:10px;border-radius:3px}
 
+/* player count picker */
+.player-count-picker{display:flex;gap:8px;width:100%;max-width:500px;margin-bottom:4px}
+.pcp-btn{flex:1;padding:10px 0;background:var(--surf);border:2px solid var(--border);
+         color:var(--muted);border-radius:10px;font-size:1.2rem;font-weight:800;
+         cursor:pointer;transition:.15s}
+.pcp-btn:hover{border-color:var(--muted)}
+.pcp-btn.active{border-color:var(--acc);background:#1a1a30;color:var(--text)}
+
 /* buttons */
 .btn{padding:11px 28px;border:none;border-radius:10px;font-size:.95rem;
      font-weight:700;cursor:pointer;transition:.15s}
@@ -252,9 +260,17 @@ hr{border:none;border-top:1px solid var(--border);width:100%;margin:18px 0}
       <input type="text" id="createName" placeholder="Enter your name" maxlength="18" value="Player">
     </div>
 
-    <!-- ── SLOT CONFIGURATOR ── -->
+    <!-- ── PLAYER COUNT + SLOT CONFIGURATOR ── -->
     <div class="section">
-      <label>Configure players (click to toggle human ↔ bot)</label>
+      <label>Number of players</label>
+      <div class="player-count-picker" id="playerCountPicker">
+        <button class="pcp-btn" data-n="2" onclick="setPlayerCount(2)">2</button>
+        <button class="pcp-btn active" data-n="3" onclick="setPlayerCount(3)">3</button>
+        <button class="pcp-btn" data-n="4" onclick="setPlayerCount(4)">4</button>
+      </div>
+    </div>
+    <div class="section" style="margin-top:4px">
+      <label>Customize slots (click to cycle: Human ↔ Bot ↔ Empty)</label>
     </div>
     <div class="slot-grid" id="slotGrid"></div>
     <div class="slot-legend">
@@ -388,8 +404,27 @@ function rndId(){ return Math.random().toString(36).slice(2,10); }
 let slotTypes = ["human","bot","bot","bot"];   // default: 1 human + 3 bots
 
 function initSlots(){
-  slotTypes = ["human","empty","empty","empty"];
+  slotTypes = ["human","bot","bot","empty"];  // default: 3-player game
   renderSlots(); updateSlotSummary();
+  _syncPickerBtn(3);
+}
+
+function setPlayerCount(n){
+  // Slot 0 is always human (the host). Remaining n-1 slots default to bots.
+  // Any slots beyond n are set to empty.
+  slotTypes = slotTypes.map((t,i) => {
+    if(i === 0) return "human";         // host always human
+    if(i < n)   return "bot";           // fill up to n with bots
+    return "empty";                     // rest unused
+  });
+  renderSlots(); updateSlotSummary();
+  _syncPickerBtn(n);
+}
+
+function _syncPickerBtn(n){
+  document.querySelectorAll(".pcp-btn").forEach(b=>{
+    b.classList.toggle("active", parseInt(b.dataset.n)===n);
+  });
 }
 
 function renderSlots(){
@@ -413,6 +448,10 @@ function cycleSlot(i){
   const cur   = slotTypes[i];
   slotTypes[i] = order[(order.indexOf(cur)+1) % order.length];
   renderSlots(); updateSlotSummary();
+  // Sync the count picker to whichever button matches current active slots
+  const active = slotTypes.filter(t=>t!=="empty").length;
+  if(active >= 2 && active <= 4) _syncPickerBtn(active);
+  else document.querySelectorAll(".pcp-btn").forEach(b=>b.classList.remove("active"));
 }
 
 function updateSlotSummary(){
@@ -660,7 +699,9 @@ function onMsg(ev){
 
   if(evt==="waiting"||evt==="player_joined"||evt==="ready_update"){
     renderWaitSlots(msg.slots||[]);
-    if(msg.status==="playing"){ showScreen("gameScreen"); startInputLoop(); }
+    // game_starting event handles the actual transition; skip here to avoid
+    // starting the input loop before the game object exists on the server
+    if(msg.status==="playing" && !S.inputLoop){ showScreen("gameScreen"); startInputLoop(); }
     const humans = (msg.slots||[]).filter(s=>!s.is_bot);
     const filled = humans.filter(s=>s.filled).length;
     const total  = humans.length;
@@ -671,10 +712,15 @@ function onMsg(ev){
 
   // Host triggered a rematch — all players silently return to waiting screen
   if(evt==="rematch_called"){
+    // Stop any running input loop — new one starts only on game_starting
     stopInputLoop();
+    // Clear all key states so held keys don't persist into new game
+    S.keys = {};
     document.getElementById("gameOverlay").classList.remove("show");
     renderWaitSlots(msg.slots||[]);
     resetReadyBtn();
+    // Solo-vs-bots room: human_slots==1 so server starts immediately;
+    // wait for game_starting event to switch to game screen.
     showScreen("waitScreen");
     return;
   }
