@@ -206,6 +206,13 @@ body.fs-open{overflow:hidden;position:fixed;width:100%}
            min-width:52px;text-align:center}
 .key-badge.listening{border-color:var(--acc2);color:var(--acc2)}
 
+.rematch-waiting{color:var(--muted);font-size:.88rem;
+                 padding:10px 0;display:flex;align-items:center;gap:8px}
+.rematch-waiting::before{content:"";width:14px;height:14px;border-radius:50%;
+  border:2px solid var(--acc);border-top-color:transparent;
+  display:inline-block;animation:spin .8s linear infinite;flex-shrink:0}
+@keyframes spin{to{transform:rotate(360deg)}}
+
 /* misc */
 .notice{color:var(--muted);font-size:.83rem;margin:6px 0}
 .error-msg{color:var(--acc2);font-size:.83rem;margin:5px 0;min-height:18px}
@@ -360,10 +367,7 @@ hr{border:none;border-top:1px solid var(--border);width:100%;margin:18px 0}
     <h2>🏆 Game Over</h2>
     <div class="winner-name" id="winnerName"></div>
     <table class="score-table" id="scoreTable"></table>
-    <div class="btn-row">
-      <button class="btn btn-primary"   onclick="playAgain()">Play Again</button>
-      <button class="btn btn-secondary" onclick="goLobby()">Lobby</button>
-    </div>
+    <div id="rematchActions" class="btn-row"></div>
   </div>
 </div>
 
@@ -372,6 +376,7 @@ hr{border:none;border-top:1px solid var(--border);width:100%;margin:18px 0}
 const S = {
   playerId: localStorage.getItem("pid") || rndId(),
   roomId:   null, gameType: "crash_bash",
+  hostId:   null,   // set when we join/create a room and on every game state
   sse: null, inputLoop: null, lastState: null, keys: {},
 };
 localStorage.setItem("pid", S.playerId);
@@ -511,7 +516,8 @@ async function createGame(){
     const data = await res.json();
     if(!res.ok) throw new Error(data.detail||data.error||"Server error");
 
-    S.roomId = data.room_id;
+    S.roomId  = data.room_id;
+    S.hostId  = data.player_id;   // creator is always host
     enterRoom(data.room_id, data.status==="playing");
 
   }catch(e){
@@ -566,6 +572,8 @@ async function joinRoom(roomId, nameOverride){
     const data = await res.json();
     if(!res.ok) throw new Error(data.detail||data.error||"Could not join");
     S.roomId = roomId;
+    // server returns host_id in the join response via lobby_dict fields
+    if(data.host_id) S.hostId = data.host_id;
     enterRoom(roomId, data.status==="playing");
   }catch(e){ document.getElementById("joinError").textContent = e.message; }
 }
@@ -647,6 +655,9 @@ function onMsg(ev){
   let msg; try{ msg = JSON.parse(ev.data); }catch{ return; }
   const evt = msg._event;
 
+  // Always capture host_id if the server sends it
+  if(msg.host_id) S.hostId = msg.host_id;
+
   if(evt==="waiting"||evt==="player_joined"||evt==="ready_update"){
     renderWaitSlots(msg.slots||[]);
     if(msg.status==="playing"){ showScreen("gameScreen"); startInputLoop(); }
@@ -658,12 +669,23 @@ function onMsg(ev){
     return;
   }
 
+  // Host triggered a rematch — all players silently return to waiting screen
+  if(evt==="rematch_called"){
+    stopInputLoop();
+    document.getElementById("gameOverlay").classList.remove("show");
+    renderWaitSlots(msg.slots||[]);
+    resetReadyBtn();
+    showScreen("waitScreen");
+    return;
+  }
+
   if(evt==="game_starting"){ showScreen("gameScreen"); startInputLoop(); }
 
   if(msg.game_type){
     S.lastState = msg;
     renderGame(msg); updateHud(msg);
     if(msg.game_over){ stopInputLoop(); showGameOver(msg); }
+
   }
 }
 
@@ -1003,7 +1025,9 @@ function updateHud(s){
 
 // ═══════════════════════════════════════════════════════════ GAME OVER
 function showGameOver(s){
-  const winP = s.winner && s.players[s.winner];
+  const winP  = s.winner && s.players[s.winner];
+  const isHost = S.playerId === S.hostId;
+
   document.getElementById("winnerName").textContent =
     winP ? (s.winner===S.playerId ? "🎉 You win!" :
             (winP.is_bot ? `Bot P${winP.number} wins` : `Player ${winP.number} wins`))
@@ -1024,22 +1048,69 @@ function showGameOver(s){
     }).join("");
 
   document.getElementById("scoreTable").innerHTML = rows;
+
+  // ── action buttons depend on role ──────────────────────────────
+  const actions = document.getElementById("rematchActions");
+  if(isHost && S.roomId){
+    // Host sees "Play Again" (triggers rematch for everyone) + "Lobby"
+    actions.innerHTML = `
+      <button class="btn btn-primary" onclick="hostRematch()">🔄 Play Again</button>
+      <button class="btn btn-secondary" onclick="goLobby()">Lobby</button>`;
+  } else if(S.roomId){
+    // Guest sees spinner + "Leave" — they wait for the host
+    actions.innerHTML = `
+      <div class="rematch-waiting">Waiting for host to start a rematch…</div>
+      <button class="btn btn-secondary" onclick="goLobby()">Leave</button>`;
+  } else {
+    // No room (shouldn't happen, but safe fallback)
+    actions.innerHTML = `
+      <button class="btn btn-primary"   onclick="goLobby()">Lobby</button>`;
+  }
+
   document.getElementById("gameOverlay").classList.add("show");
 }
 
+async function hostRematch(){
+  if(!S.roomId) return;
+  // Disable button immediately to prevent double-click
+  const btn = document.querySelector("#rematchActions .btn-primary");
+  if(btn){ btn.disabled = true; btn.textContent = "Starting…"; }
+
+  try{
+    const res = await fetch(`/api/rooms/${S.roomId}/rematch`,{
+      method:"POST",
+      headers:{"X-Player-Id": S.playerId},
+    });
+    if(!res.ok){
+      const d = await res.json();
+      throw new Error(d.detail || "Could not start rematch");
+    }
+    // The server broadcasts rematch_called → onMsg handles the transition
+    // for all players including the host.
+  }catch(e){
+    alert(e.message);
+    if(btn){ btn.disabled = false; btn.textContent = "🔄 Play Again"; }
+  }
+}
+
 function playAgain(){
+  // Generic "go back to lobby" — kept for backward compat with any stale references
+  goLobby();
+}
+
+function goLobby(){
   document.getElementById("gameOverlay").classList.remove("show");
   stopInputLoop();
   if(S.sse){ S.sse.close(); S.sse=null; }
-  S.roomId=null;
+  S.roomId=null; S.hostId=null;
   resetReadyBtn();
   showScreen("lobbyScreen");
 }
-function goLobby(){ playAgain(); }
+
 function leaveGame(){
   stopInputLoop();
   if(S.sse){ S.sse.close(); S.sse=null; }
-  S.roomId=null;
+  S.roomId=null; S.hostId=null;
   document.getElementById("gameOverlay").classList.remove("show");
   resetReadyBtn();
   showScreen("lobbyScreen");

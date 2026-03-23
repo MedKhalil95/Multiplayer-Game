@@ -132,6 +132,7 @@ class RoomState:
             "room_id":     self.room_id,
             "game_type":   self.game_type,
             "game_name":   cfg["name"],
+            "host_id":     self.host_id,
             "host_name":   self.players[self.host_id]["name"],
             "human_count": self.human_count,
             "human_slots": self.human_slots,
@@ -140,6 +141,17 @@ class RoomState:
             "status":      self.status,
             "created_ago": int(time.time() - self.created_at),
         }
+
+    def reset_for_rematch(self):
+        """Reset room back to waiting state, keeping same players and config."""
+        # Reset all human ready flags
+        for p in self.players.values():
+            p["ready"] = False
+        # Clear game state
+        self.game    = None
+        self.bots    = {}
+        self.status  = "waiting"
+        self.last_state = {}
 
     def slots_dict(self):
         """One entry per total_slot for the waiting-room UI."""
@@ -201,7 +213,9 @@ def _game_loop(room: RoomState):
 
         if room.game.is_over():
             room.status = "finished"
-            room.broadcast(room.game.get_state())
+            final = room.game.get_state()
+            final["host_id"] = room.host_id
+            room.broadcast(final)
             print(f"[loop] over  room={room.room_id}  "
                   f"winner={room.game.get_winner()}")
             break
@@ -226,7 +240,8 @@ def _start_game(room: RoomState):
             room.game_type, bid, room.bot_difficulty)
 
     room.last_state = room.game.get_state()
-    room.broadcast({**room.last_state, "_event": "game_starting"})
+    room.broadcast({**room.last_state, "_event": "game_starting",
+                    "host_id": room.host_id})
     threading.Thread(target=_game_loop, args=(room,), daemon=True).start()
 
 
@@ -362,7 +377,40 @@ def set_ready(room_id: str, body: ReadyBody,
             "slots": room.slots_dict()}
 
 
-@app.post("/api/rooms/{room_id}/input")
+@app.post("/api/rooms/{room_id}/rematch")
+def rematch(room_id: str,
+            x_player_id: Optional[str] = Header(None)):
+    """
+    Host-only.  Resets the finished room back to 'waiting' so the same
+    players can play again without rejoining.  Broadcasts rematch_called
+    so all clients automatically return to the waiting screen.
+    """
+    room = rooms.get(room_id)
+    if not room:
+        raise HTTPException(404, "Room not found")
+
+    player_id = x_player_id or ""
+    if player_id != room.host_id:
+        raise HTTPException(403, "Only the host can start a rematch")
+
+    if room.status not in ("finished", "playing"):
+        raise HTTPException(409, f"Room is not finished (status={room.status})")
+
+    room.reset_for_rematch()
+
+    print(f"[room] rematch  id={room_id}  host={player_id}")
+
+    room.broadcast({
+        "_event":      "rematch_called",
+        "room_id":     room_id,
+        "slots":       room.slots_dict(),
+        "host_id":     room.host_id,
+    })
+
+    return {"status": "waiting", "slots": room.slots_dict()}
+
+
+
 def post_input(room_id: str, body: InputBody,
                x_player_id: Optional[str] = Header(None)):
 
