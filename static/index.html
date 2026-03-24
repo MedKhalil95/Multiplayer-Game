@@ -196,6 +196,19 @@ body.fs-open{overflow:hidden;position:fixed;width:100%}
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.78);
          display:none;flex-direction:column;align-items:center;justify-content:center;z-index:100}
 .overlay.show{display:flex}
+
+/* countdown overlay */
+#countdownOverlay{position:fixed;inset:0;background:rgba(0,0,0,.82);
+  display:none;flex-direction:column;align-items:center;justify-content:center;z-index:200;pointer-events:none}
+#countdownOverlay.show{display:flex}
+#countdownNumber{font-size:9rem;font-weight:900;line-height:1;
+  background:linear-gradient(135deg,var(--acc),var(--acc2));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  animation:cdbounce .35s ease-out}
+#countdownGo{font-size:5rem;font-weight:900;color:var(--green);
+  display:none;animation:cdgo .5s ease-out}
+@keyframes cdbounce{from{transform:scale(2.2);opacity:0}to{transform:scale(1);opacity:1}}
+@keyframes cdgo{from{transform:scale(.5);opacity:0}to{transform:scale(1);opacity:1}}
 .result-card{background:var(--surf);border:2px solid var(--border);border-radius:20px;
              padding:36px 44px;text-align:center;max-width:380px;width:90%}
 .result-card h2{font-size:1.9rem;margin-bottom:7px}
@@ -350,6 +363,11 @@ hr{border:none;border-top:1px solid var(--border);width:100%;margin:18px 0}
 
 <!-- ══════════════════════════════════════ GAME -->
 <div id="gameScreen" class="screen">
+  <!-- countdown overlay – shown over the canvas before game starts -->
+  <div id="countdownOverlay">
+    <div id="countdownNumber"></div>
+    <div id="countdownGo">GO!</div>
+  </div>
   <div class="game-hud">
     <div class="hud-players" id="hudPlayers"></div>
     <div style="display:flex;gap:8px;align-items:center">
@@ -725,10 +743,9 @@ function onMsg(ev){
 
   // Host triggered a rematch — all players silently return to waiting screen
   if(evt==="rematch_called"){
-    // Stop any running input loop — new one starts only on game_starting
     stopInputLoop();
-    // Clear all key states so held keys don't persist into new game
     S.keys = {};
+    _hideCountdown();
     document.getElementById("gameOverlay").classList.remove("show");
     renderWaitSlots(msg.slots||[]);
     resetReadyBtn();
@@ -738,7 +755,16 @@ function onMsg(ev){
     return;
   }
 
-  if(evt==="game_starting"){ showScreen("gameScreen"); startInputLoop(); }
+  if(evt==="game_starting"){
+    showScreen("gameScreen");
+    startInputLoop();
+    // Show "3" immediately so the screen isn't blank while waiting for first countdown tick
+    _showCountdown(3);
+  }
+
+  if(evt==="countdown"){
+    _showCountdown(msg.count);
+  }
 
   if(msg.game_type){
     S.lastState = msg;
@@ -746,6 +772,38 @@ function onMsg(ev){
     if(msg.game_over){ stopInputLoop(); showGameOver(msg); }
 
   }
+}
+
+// ═══════════════════════════════════════════════════════════ COUNTDOWN
+function _showCountdown(count){
+  const overlay = document.getElementById("countdownOverlay");
+  const numEl   = document.getElementById("countdownNumber");
+  const goEl    = document.getElementById("countdownGo");
+
+  overlay.classList.add("show");
+
+  if(count > 0){
+    goEl.style.display   = "none";
+    numEl.style.display  = "block";
+    // Re-trigger animation by cloning the node
+    const fresh = numEl.cloneNode(true);
+    fresh.textContent = count;
+    numEl.parentNode.replaceChild(fresh, numEl);
+  } else {
+    // count === 0  →  "GO!"
+    document.getElementById("countdownNumber").style.display = "none";
+    goEl.style.display = "block";
+    // Re-trigger GO animation
+    const fresh = goEl.cloneNode(true);
+    goEl.parentNode.replaceChild(fresh, goEl);
+    setTimeout(_hideCountdown, 700);
+  }
+}
+
+function _hideCountdown(){
+  document.getElementById("countdownOverlay").classList.remove("show");
+  document.getElementById("countdownNumber").style.display = "block";
+  document.getElementById("countdownGo").style.display     = "none";
 }
 
 // ═══════════════════════════════════════════════════════════ INPUT
@@ -1003,7 +1061,6 @@ function renderCrashBash(s){
     if(pid===S.playerId){
       ctx.strokeStyle="#fff"; ctx.lineWidth=2.5; rr(p.x,p.y,pw,ph,5); ctx.stroke();
     }
-    if(p.stunned){ ctx.fillStyle="rgba(255,255,255,.35)"; rr(p.x,p.y,pw,ph,5); ctx.fill(); }
     ctx.globalAlpha=p.eliminated?0.3:1;
     drawPlayerLabel(p);
     ctx.fillStyle="#fff"; ctx.font="11px sans-serif";

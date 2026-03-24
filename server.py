@@ -248,7 +248,19 @@ def _start_game(room: RoomState):
     room.last_state = room.game.get_state()
     room.broadcast({**room.last_state, "_event": "game_starting",
                     "host_id": room.host_id})
-    threading.Thread(target=_game_loop, args=(room,), daemon=True).start()
+
+    # Countdown runs in a background thread so it doesn't block the endpoint
+    threading.Thread(target=_countdown_then_loop, args=(room,), daemon=True).start()
+
+
+def _countdown_then_loop(room: RoomState):
+    """Broadcast 3-2-1-Go then start the game loop."""
+    for n in (3, 2, 1):
+        room.broadcast({"_event": "countdown", "count": n})
+        time.sleep(1.0)
+    room.broadcast({"_event": "countdown", "count": 0})   # "Go!"
+    time.sleep(0.25)   # tiny pause so "Go!" is visible before first tick
+    _game_loop(room)
 
 
 # ─────────────────────────────────────────────────────────────────────

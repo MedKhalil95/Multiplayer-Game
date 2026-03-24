@@ -28,7 +28,7 @@ PLAYER_W      = 72          # px – wide paddle dimension (along movement axis)
 PLAYER_H      = 20          # px – thin paddle dimension (across movement axis)
 BALL_SIZE     = 18          # px square  (used as diameter for circle)
 GOAL_DEPTH    = 20          # px – how deep the scoring strip is
-STUN_TICKS    = 16          # ticks player is stunned after ball hit
+HIT_COOLDOWN  = 20          # ticks a ball ignores the SAME player after bouncing
 BALL_PUSH     = 0.35        # fraction of player speed added to ball on deflect
 BALL_COUNT    = 4
 
@@ -102,7 +102,6 @@ class CBPlayer:
             self.h = PLAYER_W
 
         self.score      = INITIAL_SCORE
-        self.stunned    = 0         # ticks remaining
         self.eliminated = False
 
     # axis-aligned bounding box corners
@@ -128,7 +127,6 @@ class CBPlayer:
             "side":       self.side,
             "score":      self.score,
             "eliminated": self.eliminated,
-            "stunned":    self.stunned > 0,
         }
 
 
@@ -139,8 +137,9 @@ class CBBall:
         CBBall._ctr += 1
         self.ball_id = f"ball_{CBBall._ctr}"
         self.size    = BALL_SIZE
-        self.hit_count = 0          # track how many times ball has been hit by players
+        self.hit_count = 0
         self.current_speed = BALL_SPEED_START
+        self.hit_cooldowns: dict = {}   # player_id → ticks remaining to ignore
         self._reset(arena_w, arena_h)
 
     def _reset(self, arena_w: int, arena_h: int):
@@ -159,6 +158,7 @@ class CBBall:
     def reset(self):
         """Reset ball position and speed after scoring"""
         self.hit_count = 0
+        self.hit_cooldowns = {}
         self._reset(self._arena_w, self._arena_h)
 
     def increase_speed(self):
@@ -228,16 +228,21 @@ class CrashBashGame(BaseHeadlessGame):
         # 1. Move players ------------------------------------------------
         for p in alive:
             inp = inputs.get(p.player_id, InputState.neutral(p.player_id))
-            if p.stunned > 0:
-                p.stunned -= 1
-                continue
             self._move_player(p, inp, W, H)
 
-        # 2. Move balls & handle player deflections ----------------------
+        # 2. Tick down per-ball cooldowns --------------------------------
+        for ball in self.balls:
+            ball.hit_cooldowns = {
+                pid: t - 1
+                for pid, t in ball.hit_cooldowns.items()
+                if t > 1
+            }
+
+        # 3. Move balls & handle player deflections ----------------------
         for ball in self.balls:
             self._move_ball(ball, alive, inputs, W, H)
 
-        # 3. Goal scoring ------------------------------------------------
+        # 4. Goal scoring ------------------------------------------------
         for ball in self.balls:
             for p in alive:
                 gx, gy, gw, gh = _goal_rect(p.side, W, H)
@@ -257,7 +262,7 @@ class CrashBashGame(BaseHeadlessGame):
                         p.eliminated = True
                     break   # one scorer per ball per tick
 
-        # 4. Win check ---------------------------------------------------
+        # 5. Win check ---------------------------------------------------
         alive_now = [p for p in self.players.values() if not p.eliminated]
         if len(alive_now) <= 1:
             winner = alive_now[0].player_id if alive_now else None
@@ -290,7 +295,7 @@ class CrashBashGame(BaseHeadlessGame):
             p.y = self.clamp(p.y, min_y, max_y)
             p.x = float(margin) if p.side == "left" else float(W - margin - p.w)
 
-    # ── ball physics (mirrors original Ball.update) ────────────────────
+    # ── ball physics ──────────────────────────────────────────────────
 
     def _move_ball(self, ball: CBBall, alive: list, inputs: dict, W: int, H: int):
         ball.x += ball.dx
@@ -311,49 +316,49 @@ class CrashBashGame(BaseHeadlessGame):
             ball.y  = H - ball.size
             ball.dy = -abs(ball.dy)
 
-        # Player deflections — stunned players are phased out (ball passes through)
+        # Player deflections
         for p in alive:
-            if p.stunned > 0:
-                continue   # ball passes through stunned players
+            if ball.hit_cooldowns.get(p.player_id, 0) > 0:
+                continue
             if not self.rects_overlap(ball.x, ball.y, ball.size, ball.size,
                                       p.x,    p.y,    p.w,       p.h):
                 continue
 
-            # Reflect away from player centre (mirrors original)
-            bx = ball.x + ball.size / 2
-            by = ball.y + ball.size / 2
-            px = p.x    + p.w / 2
-            py = p.y    + p.h / 2
+            # ── determine which face the ball came from ──────────────
+            # For a horizontal paddle (top/bottom): the ball always hits
+            # the top or bottom face.  For vertical paddle (left/right):
+            # always the left or right face.  We use the paddle's side
+            # to decide the axis rather than the overlap depth, which
+            # eliminates the "slide-through" case entirely.
 
-            vx   = bx - px
-            vy   = by - py
-            dist = math.hypot(vx, vy) or 0.01
-            nx, ny = vx / dist, vy / dist
-
-            speed   = math.hypot(ball.dx, ball.dy) or 3.0
-            ball.dx = nx * speed
-            ball.dy = ny * speed
-
-            # Player-movement push influence (mirrors original)
             inp = inputs.get(p.player_id, InputState.neutral(p.player_id))
+
             if p.axis == "horizontal":
-                push_x = ((1 if inp.right else 0) - (1 if inp.left else 0)) * (PLAYER_SPEED * BALL_PUSH)
-                push_y = 0.0
-            else:
-                push_x = 0.0
-                push_y = ((1 if inp.down else 0) - (1 if inp.up else 0)) * (PLAYER_SPEED * BALL_PUSH)
+                # Reflect on Y axis
+                if p.side == "top":
+                    # Ball came from below the paddle → push out below
+                    ball.y = p.y + p.h + 1
+                    ball.dy = abs(ball.dy)          # always bounce downward
+                else:  # bottom
+                    ball.y = p.y - ball.size - 1
+                    ball.dy = -abs(ball.dy)         # always bounce upward
 
-            ball.dx += push_x
-            ball.dy += push_y
+                # Preserve / add horizontal push from player movement
+                ball.dx += ((1 if inp.right else 0) - (1 if inp.left else 0)) * (PLAYER_SPEED * BALL_PUSH)
 
-            # Separate ball from player
-            ball.x += nx * 6
-            ball.y += ny * 6
+            else:  # vertical paddle
+                # Reflect on X axis
+                if p.side == "left":
+                    ball.x = p.x + p.w + 1
+                    ball.dx = abs(ball.dx)          # always bounce rightward
+                else:  # right
+                    ball.x = p.x - ball.size - 1
+                    ball.dx = -abs(ball.dx)         # always bounce leftward
 
-            # Increase ball speed when hit by player
+                ball.dy += ((1 if inp.down else 0) - (1 if inp.up else 0)) * (PLAYER_SPEED * BALL_PUSH)
+
             ball.increase_speed()
-
-            p.stunned = STUN_TICKS
+            ball.hit_cooldowns[p.player_id] = HIT_COOLDOWN
             break   # one player collision per ball per tick
 
     # ── state snapshot ────────────────────────────────────────────────
