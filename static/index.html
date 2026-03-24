@@ -394,6 +394,7 @@ const S = {
   roomId:   null, gameType: "crash_bash",
   hostId:   null,   // set when we join/create a room and on every game state
   sse: null, inputLoop: null, lastState: null, keys: {},
+  pidToName: {},    // pid → display name, built from room slots
 };
 localStorage.setItem("pid", S.playerId);
 
@@ -557,6 +558,9 @@ async function createGame(){
 
     S.roomId  = data.room_id;
     S.hostId  = data.player_id;   // creator is always host
+    S.pidToName[S.playerId] = name;  // store own name
+    // populate bot names from slots
+    if(data.slots) data.slots.forEach(sl => { if(sl.pid && sl.name) S.pidToName[sl.pid] = sl.name; });
     enterRoom(data.room_id, data.status==="playing");
 
   }catch(e){
@@ -611,8 +615,10 @@ async function joinRoom(roomId, nameOverride){
     const data = await res.json();
     if(!res.ok) throw new Error(data.detail||data.error||"Could not join");
     S.roomId = roomId;
+    S.pidToName[S.playerId] = name;  // store own name
     // server returns host_id in the join response via lobby_dict fields
     if(data.host_id) S.hostId = data.host_id;
+    if(data.slots) data.slots.forEach(sl => { if(sl.pid && sl.name) S.pidToName[sl.pid] = sl.name; });
     enterRoom(roomId, data.status==="playing");
   }catch(e){ document.getElementById("joinError").textContent = e.message; }
 }
@@ -696,6 +702,13 @@ function onMsg(ev){
 
   // Always capture host_id if the server sends it
   if(msg.host_id) S.hostId = msg.host_id;
+
+  // Build / update pid → name map from any slot data the server sends
+  if(msg.slots){
+    msg.slots.forEach(sl => {
+      if(sl.pid && sl.name) S.pidToName[sl.pid] = sl.name;
+    });
+  }
 
   if(evt==="waiting"||evt==="player_joined"||evt==="ready_update"){
     renderWaitSlots(msg.slots||[]);
@@ -952,11 +965,21 @@ function rr(x,y,w,h,r){
   ctx.closePath();
 }
 
+// ── player name helpers ──
+function playerName(p){
+  // p is a player dict from game state
+  if(p.is_bot) return `Bot ${p.number}`;
+  return S.pidToName[p.player_id] || `P${p.number}`;
+}
+
 function drawPlayerLabel(p){
   ctx.fillStyle = "#000";
-  ctx.font      = "bold 13px sans-serif";
+  ctx.font      = "bold 11px sans-serif";
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  ctx.fillText("P"+p.number, p.x+p.size/2, p.y+p.size/2);
+  const label = playerName(p);
+  const pw = p.w || p.size;
+  const ph = p.h || p.size;
+  ctx.fillText(label, p.x + pw/2, p.y + ph/2);
 }
 
 // ── CRASH BASH ──
@@ -972,17 +995,20 @@ function renderCrashBash(s){
   }
 
   for(const[pid,p] of Object.entries(s.players)){
+    const pw = p.w || p.size;
+    const ph = p.h || p.size;
     ctx.globalAlpha = p.eliminated ? 0.22 : 1;
     ctx.fillStyle   = p.color;
-    rr(p.x,p.y,p.size,p.size,6); ctx.fill();
+    rr(p.x,p.y,pw,ph,5); ctx.fill();
     if(pid===S.playerId){
-      ctx.strokeStyle="#fff"; ctx.lineWidth=2.5; rr(p.x,p.y,p.size,p.size,6); ctx.stroke();
+      ctx.strokeStyle="#fff"; ctx.lineWidth=2.5; rr(p.x,p.y,pw,ph,5); ctx.stroke();
     }
-    if(p.stunned){ ctx.fillStyle="rgba(255,255,255,.3)"; rr(p.x,p.y,p.size,p.size,6); ctx.fill(); }
+    if(p.stunned){ ctx.fillStyle="rgba(255,255,255,.35)"; rr(p.x,p.y,pw,ph,5); ctx.fill(); }
     ctx.globalAlpha=p.eliminated?0.3:1;
     drawPlayerLabel(p);
     ctx.fillStyle="#fff"; ctx.font="11px sans-serif";
-    ctx.fillText(p.eliminated?"OUT":p.score, p.x+p.size/2, p.y+p.size+11);
+    ctx.textAlign="center";
+    ctx.fillText(p.eliminated?"OUT":p.score, p.x+pw/2, p.y+ph+11);
     ctx.globalAlpha=1;
   }
 
@@ -1083,9 +1109,10 @@ function updateHud(s){
       const val  = s.game_type==="crash_bash" ? p.score : p.hp+" HP";
       const elim = p.eliminated?" hud-elim":"";
       const bot  = p.is_bot===true ? `<span class="hud-bot">BOT</span>` : "";
+      const name = playerName(p);
       return `<div class="hud-player${elim}">
         <div class="hud-color" style="background:${p.color}"></div>
-        <span>P${p.number}${bot}</span>
+        <span>${name}${bot}</span>
         <span class="hud-score">${p.eliminated?"OUT":val}</span>
       </div>`;
     }).join("");
@@ -1098,7 +1125,7 @@ function showGameOver(s){
 
   document.getElementById("winnerName").textContent =
     winP ? (s.winner===S.playerId ? "🎉 You win!" :
-            (winP.is_bot ? `Bot P${winP.number} wins` : `Player ${winP.number} wins`))
+            (winP.is_bot ? `${playerName(winP)} wins` : `${playerName(winP)} wins`))
          : "Draw";
 
   const rows = Object.values(s.players)
@@ -1110,7 +1137,7 @@ function showGameOver(s){
       const bot  = p.is_bot?" 🤖":"";
       return `<tr>
         <td>${medal}</td>
-        <td style="color:${p.color}">P${p.number}${bot}${you}</td>
+        <td style="color:${p.color}">${playerName(p)}${bot}${you}</td>
         <td style="text-align:right;font-weight:700">${val}</td>
       </tr>`;
     }).join("");
@@ -1170,7 +1197,7 @@ function goLobby(){
   document.getElementById("gameOverlay").classList.remove("show");
   stopInputLoop();
   if(S.sse){ S.sse.close(); S.sse=null; }
-  S.roomId=null; S.hostId=null;
+  S.roomId=null; S.hostId=null; S.pidToName={};
   resetReadyBtn();
   showScreen("lobbyScreen");
 }

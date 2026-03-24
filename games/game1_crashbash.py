@@ -23,7 +23,9 @@ PLAYER_SPEED  = 9           # px / tick  (matches original min(w,h)//160 ≈ 4-5
 BALL_SPEED_START = 3.5      # starting speed (slower for early game)
 BALL_SPEED_MAX = 8.0        # maximum speed after many hits
 BALL_SPEED_INCREMENT = 0.25  # speed increase per player hit
-PLAYER_SIZE   = 36          # px square
+PLAYER_SIZE   = 36          # px (kept for backward-compat / bot AI)
+PLAYER_W      = 72          # px – wide paddle dimension (along movement axis)
+PLAYER_H      = 20          # px – thin paddle dimension (across movement axis)
 BALL_SIZE     = 18          # px square  (used as diameter for circle)
 GOAL_DEPTH    = 20          # px – how deep the scoring strip is
 STUN_TICKS    = 16          # ticks player is stunned after ball hit
@@ -64,20 +66,17 @@ def _goal_rect(side: str, arena_w: int, arena_h: int):
 def _player_start(number: int, arena_w: int, arena_h: int):
     """1-indexed.  Returns (x, y, side, movement_axis)."""
     W, H   = arena_w, arena_h
-    sz     = PLAYER_SIZE
-    # Place players very close to their goal strip (just inside the GOAL_DEPTH band)
-    margin = GOAL_DEPTH + sz + 4   # a few px in front of the goal
+    # Players sit immediately in front of their goal strip (2 px gap)
+    margin = GOAL_DEPTH + 2
 
-    g      = _goal_size(W, H)
-
-    if number == 1:   # top – moves horizontally
-        return (W//2 - sz//2, margin, "top",    "horizontal")
+    if number == 1:   # top – moves horizontally (w=PLAYER_W, h=PLAYER_H)
+        return (W//2 - PLAYER_W//2, margin, "top", "horizontal")
     if number == 2:   # bottom – moves horizontally
-        return (W//2 - sz//2, H - margin - sz,  "bottom", "horizontal")
-    if number == 3:   # left – moves vertically
-        return (margin,  H//2 - sz//2, "left",  "vertical")
+        return (W//2 - PLAYER_W//2, H - margin - PLAYER_H, "bottom", "horizontal")
+    if number == 3:   # left – moves vertically (w=PLAYER_H, h=PLAYER_W)
+        return (margin, H//2 - PLAYER_W//2, "left", "vertical")
     # right
-    return (W - margin - sz, H//2 - sz//2, "right", "vertical")
+    return (W - margin - PLAYER_H, H//2 - PLAYER_W//2, "right", "vertical")
 
 
 # ── data classes ──────────────────────────────────────────────────────
@@ -87,12 +86,21 @@ class CBPlayer:
         self.player_id  = player_id
         self.number     = number
         self.color      = PLAYER_COLORS[number - 1]
-        self.size       = PLAYER_SIZE
+        self.size       = PLAYER_SIZE  # kept for bot AI compat
 
         x, y, side, axis = _player_start(number, arena_w, arena_h)
         self.x, self.y  = float(x), float(y)
         self.side       = side      # "top" | "bottom" | "left" | "right"
         self.axis       = axis      # "horizontal" | "vertical"
+
+        # Rectangular paddle: wide along the movement axis, thin across it
+        if axis == "horizontal":
+            self.w = PLAYER_W
+            self.h = PLAYER_H
+        else:
+            self.w = PLAYER_H
+            self.h = PLAYER_W
+
         self.score      = INITIAL_SCORE
         self.stunned    = 0         # ticks remaining
         self.eliminated = False
@@ -101,11 +109,11 @@ class CBPlayer:
     @property
     def left(self):   return self.x
     @property
-    def right(self):  return self.x + self.size
+    def right(self):  return self.x + self.w
     @property
     def top(self):    return self.y
     @property
-    def bottom(self): return self.y + self.size
+    def bottom(self): return self.y + self.h
 
     def to_dict(self) -> dict:
         return {
@@ -114,7 +122,9 @@ class CBPlayer:
             "color":      self.color,
             "x":          round(self.x, 1),
             "y":          round(self.y, 1),
-            "size":       self.size,
+            "w":          self.w,
+            "h":          self.h,
+            "size":       self.size,   # kept for bot AI compat
             "side":       self.side,
             "score":      self.score,
             "eliminated": self.eliminated,
@@ -260,25 +270,25 @@ class CrashBashGame(BaseHeadlessGame):
     def _move_player(self, p: CBPlayer, inp: InputState, W: int, H: int):
         g  = _goal_size(W, H)
         sp = PLAYER_SPEED
-        margin = GOAL_DEPTH + p.size + 4
+        margin = GOAL_DEPTH + 2
 
         if p.axis == "horizontal":
             # clamp to goal width corridor
             min_x = W//2 - g//2
-            max_x = W//2 + g//2 - p.size
+            max_x = W//2 + g//2 - p.w
             if inp.left:  p.x -= sp
             if inp.right: p.x += sp
             p.x = self.clamp(p.x, min_x, max_x)
             # y locked close to their goal strip
-            p.y = float(margin) if p.side == "top" else float(H - margin - p.size)
+            p.y = float(margin) if p.side == "top" else float(H - margin - p.h)
 
         else:  # vertical
             min_y = H//2 - g//2
-            max_y = H//2 + g//2 - p.size
+            max_y = H//2 + g//2 - p.h
             if inp.up:   p.y -= sp
             if inp.down: p.y += sp
             p.y = self.clamp(p.y, min_y, max_y)
-            p.x = float(margin) if p.side == "left" else float(W - margin - p.size)
+            p.x = float(margin) if p.side == "left" else float(W - margin - p.w)
 
     # ── ball physics (mirrors original Ball.update) ────────────────────
 
@@ -301,19 +311,19 @@ class CrashBashGame(BaseHeadlessGame):
             ball.y  = H - ball.size
             ball.dy = -abs(ball.dy)
 
-        # Player deflections
+        # Player deflections — stunned players are phased out (ball passes through)
         for p in alive:
             if p.stunned > 0:
-                continue
+                continue   # ball passes through stunned players
             if not self.rects_overlap(ball.x, ball.y, ball.size, ball.size,
-                                      p.x,    p.y,    p.size,   p.size):
+                                      p.x,    p.y,    p.w,       p.h):
                 continue
 
             # Reflect away from player centre (mirrors original)
             bx = ball.x + ball.size / 2
             by = ball.y + ball.size / 2
-            px = p.x    + p.size    / 2
-            py = p.y    + p.size    / 2
+            px = p.x    + p.w / 2
+            py = p.y    + p.h / 2
 
             vx   = bx - px
             vy   = by - py
