@@ -178,19 +178,46 @@ body.fs-open{overflow:hidden;position:fixed;width:100%}
 .mobile-controls{width:100%;max-width:800px;display:flex;
                  justify-content:space-between;align-items:center;
                  padding:8px 16px;gap:12px;user-select:none}
-.dpad{position:relative;width:120px;height:120px}
-.dpad-btn{position:absolute;width:38px;height:38px;background:var(--surf);
-          border:1.5px solid var(--border);border-radius:8px;
-          display:flex;align-items:center;justify-content:center;font-size:1.1rem;
-          cursor:pointer;-webkit-tap-highlight-color:transparent;transition:background .1s}
-.dpad-btn:active,.dpad-btn.pressed{background:var(--acc);border-color:var(--acc)}
-.dpad-btn.up{top:0;left:41px}.dpad-btn.down{bottom:0;left:41px}
-.dpad-btn.left{top:41px;left:0}.dpad-btn.right{top:41px;right:0}
-.dpad-btn.center{top:41px;left:41px;font-size:.65rem}
-.action-btn{width:72px;height:72px;border-radius:50%;background:var(--acc2);
-            border:none;color:#fff;font-size:1.4rem;cursor:pointer;font-weight:800;
-            -webkit-tap-highlight-color:transparent}
-.action-btn:active{transform:scale(.92)}
+
+/* joystick */
+.joystick-zone{
+  width:130px;height:130px;border-radius:50%;
+  background:rgba(255,255,255,.06);border:2px solid rgba(255,255,255,.12);
+  position:relative;flex-shrink:0;
+  touch-action:none;-webkit-tap-highlight-color:transparent;
+}
+.joystick-knob{
+  width:52px;height:52px;border-radius:50%;
+  background:radial-gradient(circle at 35% 35%,#8880ff,#4a44cc);
+  border:2px solid rgba(255,255,255,.35);
+  box-shadow:0 4px 16px rgba(0,0,0,.5);
+  position:absolute;
+  top:50%;left:50%;
+  transform:translate(-50%,-50%);
+  pointer-events:none;
+  transition:transform .05s;
+}
+/* direction arrows drawn in CSS */
+.joystick-zone::before{
+  content:'';display:block;position:absolute;inset:0;border-radius:50%;
+  background:
+    /* up arrow */
+    linear-gradient(180deg,rgba(255,255,255,.18) 0%,transparent 28%) 50% 4px/20px 24px no-repeat,
+    /* down arrow */
+    linear-gradient(0deg,rgba(255,255,255,.18) 0%,transparent 28%) 50% calc(100% - 4px)/20px 24px no-repeat,
+    /* left arrow */
+    linear-gradient(90deg,rgba(255,255,255,.18) 0%,transparent 28%) 4px 50%/24px 20px no-repeat,
+    /* right arrow */
+    linear-gradient(270deg,rgba(255,255,255,.18) 0%,transparent 28%) calc(100% - 4px) 50%/24px 20px no-repeat;
+  pointer-events:none;
+}
+
+.action-btn{width:80px;height:80px;border-radius:50%;background:var(--acc2);
+            border:2px solid rgba(255,255,255,.25);color:#fff;font-size:1.6rem;
+            cursor:pointer;font-weight:800;flex-shrink:0;
+            -webkit-tap-highlight-color:transparent;
+            box-shadow:0 4px 16px rgba(255,101,132,.4);}
+.action-btn:active{transform:scale(.9);box-shadow:none}
 
 /* overlay */
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.78);
@@ -387,12 +414,8 @@ hr{border:none;border-top:1px solid var(--border);width:100%;margin:18px 0}
   </div>
   <canvas id="gameCanvas" width="800" height="600"></canvas>
   <div class="mobile-controls" id="mobileControls">
-    <div class="dpad">
-      <div class="dpad-btn up"    id="dbUp">▲</div>
-      <div class="dpad-btn down"  id="dbDown">▼</div>
-      <div class="dpad-btn left"  id="dbLeft">◀</div>
-      <div class="dpad-btn right" id="dbRight">▶</div>
-      <div class="dpad-btn center"></div>
+    <div class="joystick-zone" id="joystickZone">
+      <div class="joystick-knob" id="joystickKnob"></div>
     </div>
     <button class="action-btn" id="actionBtn">🎯</button>
   </div>
@@ -849,23 +872,95 @@ function stopInputLoop(){
   if(S.inputLoop){ clearInterval(S.inputLoop); S.inputLoop = null; }
 }
 
-// ═══════════════════════════════════════════════════════════ MOBILE
-function wireMobile(id, key){
-  const el = document.getElementById(id);
-  if(!el) return;
-  const set = v=>{
-    el.classList.toggle("pressed", v);
-    S.keys[keyBindings[key]] = v;
-  };
-  el.addEventListener("touchstart", e=>{ e.preventDefault(); set(true);  },{passive:false});
-  el.addEventListener("touchend",   e=>{ e.preventDefault(); set(false); },{passive:false});
-  el.addEventListener("mousedown",  ()=>set(true));
-  el.addEventListener("mouseup",    ()=>set(false));
-  el.addEventListener("mouseleave", ()=>set(false));
-}
-wireMobile("dbUp","up"); wireMobile("dbDown","down");
-wireMobile("dbLeft","left"); wireMobile("dbRight","right");
-wireMobile("actionBtn","action");
+// ═══════════════════════════════════════════════════════════ MOBILE JOYSTICK
+(function(){
+  const zone  = document.getElementById("joystickZone");
+  const knob  = document.getElementById("joystickKnob");
+  const RADIUS = 38;   // max knob travel in px
+  const DEAD   = 14;   // dead-zone radius in px – no input below this
+
+  let active = false;
+  let originX = 0, originY = 0;
+
+  function getCenter(){
+    const r = zone.getBoundingClientRect();
+    return { x: r.left + r.width/2, y: r.top + r.height/2 };
+  }
+
+  function applyJoy(dx, dy){
+    const dist = Math.hypot(dx, dy);
+
+    // Clamp knob visual to RADIUS
+    const ratio  = Math.min(dist, RADIUS) / (dist || 1);
+    const kx     = dx * ratio;
+    const ky     = dy * ratio;
+    knob.style.transform = `translate(calc(-50% + ${kx}px), calc(-50% + ${ky}px))`;
+
+    if(dist < DEAD){
+      S.keys[keyBindings.up]    = false;
+      S.keys[keyBindings.down]  = false;
+      S.keys[keyBindings.left]  = false;
+      S.keys[keyBindings.right] = false;
+      return;
+    }
+
+    // 8-way direction from angle — diagonals allowed
+    const angle = Math.atan2(dy, dx);  // -π to π, 0 = right
+    const DEG45 = Math.PI / 4;
+    S.keys[keyBindings.right] = angle > -DEG45 * 3 && angle <  DEG45;
+    S.keys[keyBindings.left]  = angle >  DEG45     || angle < -DEG45 * 3;
+    S.keys[keyBindings.up]    = angle > -DEG45 * 3 && angle < -DEG45;
+    S.keys[keyBindings.down]  = angle >  DEG45     && angle <  DEG45 * 3;
+  }
+
+  function onStart(e){
+    e.preventDefault();
+    active = true;
+    const touch = e.touches ? e.touches[0] : e;
+    const c = getCenter();
+    originX = c.x; originY = c.y;
+    applyJoy(touch.clientX - originX, touch.clientY - originY);
+  }
+
+  function onMove(e){
+    if(!active) return;
+    e.preventDefault();
+    const touch = e.touches ? e.touches[0] : e;
+    applyJoy(touch.clientX - originX, touch.clientY - originY);
+  }
+
+  function onEnd(e){
+    e.preventDefault();
+    active = false;
+    knob.style.transform = "translate(-50%, -50%)";
+    S.keys[keyBindings.up]    = false;
+    S.keys[keyBindings.down]  = false;
+    S.keys[keyBindings.left]  = false;
+    S.keys[keyBindings.right] = false;
+  }
+
+  zone.addEventListener("touchstart",  onStart, {passive:false});
+  zone.addEventListener("touchmove",   onMove,  {passive:false});
+  zone.addEventListener("touchend",    onEnd,   {passive:false});
+  zone.addEventListener("touchcancel", onEnd,   {passive:false});
+  // Mouse fallback for desktop testing
+  zone.addEventListener("mousedown",  onStart);
+  window.addEventListener("mousemove", e=>{ if(active) onMove(e); });
+  window.addEventListener("mouseup",   e=>{ if(active) onEnd(e); });
+})();
+
+// Action button
+(function(){
+  const btn = document.getElementById("actionBtn");
+  const set = v => { S.keys[keyBindings.action] = v; };
+  btn.addEventListener("touchstart",  e=>{ e.preventDefault(); set(true);  }, {passive:false});
+  btn.addEventListener("touchend",    e=>{ e.preventDefault(); set(false); }, {passive:false});
+  btn.addEventListener("touchcancel", e=>{ e.preventDefault(); set(false); }, {passive:false});
+  btn.addEventListener("mousedown",  ()=>set(true));
+  btn.addEventListener("mouseup",    ()=>set(false));
+  btn.addEventListener("mouseleave", ()=>set(false));
+})();
+
 document.getElementById("mobileControls").style.display =
   window.matchMedia("(pointer:coarse)").matches ? "flex" : "none";
 
