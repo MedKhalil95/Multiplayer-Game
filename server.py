@@ -13,7 +13,7 @@
 # 3. GET /api/rooms/{id}  – room detail endpoint for the waiting screen
 # 4. slots_dict() in broadcast so the waiting-room UI knows every seat
 
-import sys, os, json, uuid, time, threading, queue
+import sys, os, json, uuid, time, threading, queue, random as _random
 from pathlib import Path
 from typing import Optional
 
@@ -42,6 +42,11 @@ rooms_lock = threading.Lock()
 # ─────────────────────────────────────────────────────────────────────
 #  RoomState
 # ─────────────────────────────────────────────────────────────────────
+
+PLAYER_COLOR_PALETTE = [
+    "#DC5050", "#5050DC", "#50C864", "#DCDC50",
+    "#DC50DC", "#50DCDC", "#FF8C00", "#A0A0FF",
+]
 
 class RoomState:
     """
@@ -73,10 +78,11 @@ class RoomState:
         self.human_slots    = total_slots - bot_slots
         self.bot_difficulty = bot_difficulty
 
-        # {pid: {name, ready, number, is_bot}}
+        # {pid: {name, ready, number, is_bot, color}}
+        host_color = PLAYER_COLOR_PALETTE[0]
         self.players: dict[str, dict] = {
             host_id: {"name": host_name, "ready": False,
-                      "number": 1, "is_bot": False}
+                      "number": 1, "is_bot": False, "color": host_color}
         }
         self.status      = "waiting"
         self.game        = None
@@ -100,6 +106,9 @@ class RoomState:
     @property
     def all_ready(self):
         return self.is_full and all(p["ready"] for p in self.players.values())
+
+    def taken_colors(self) -> set:
+        return {p["color"] for p in self.players.values()}
 
     # ── pub/sub ───────────────────────────────────────────────────────
 
@@ -200,13 +209,19 @@ def _game_loop(room: RoomState):
             else:
                 q   = room.input_queues.get(pid)
                 inp = InputState.neutral(pid)
+                action_latched = False
                 if q:
                     while not q.empty():
                         try:
                             raw = q.get_nowait()
                             inp = InputState.from_dict(pid, raw)
+                            # Latch action: if ANY queued frame had action=true, keep it
+                            if raw.get("action"):
+                                action_latched = True
                         except queue.Empty:
                             break
+                if action_latched:
+                    inp.action = True
             inputs[pid] = inp
 
         try:
@@ -509,4 +524,4 @@ threading.Thread(target=_cleanup, daemon=True).start()
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
-    uvicorn.run("server:app", host="0.0.0.0", port=port)
+    uvicorn.run("server:app", host="127.0.0.1", port=port)

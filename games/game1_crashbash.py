@@ -30,6 +30,8 @@ BALL_SIZE     = 18          # px square  (used as diameter for circle)
 GOAL_DEPTH    = 20          # px – how deep the scoring strip is
 HIT_COOLDOWN  = 20          # ticks a ball ignores the SAME player after bouncing
 BALL_PUSH     = 0.35        # fraction of player speed added to ball on deflect
+POWER_HIT_MULTIPLIER = 2.2  # speed multiplier when action button held on hit
+POWER_HIT_MAX = 14.0        # hard cap for power-hit speed
 BALL_COUNT    = 4
 
 PLAYER_COLORS = ["#DC5050", "#5050DC", "#50C864", "#DCDC50"]
@@ -82,10 +84,10 @@ def _player_start(number: int, arena_w: int, arena_h: int):
 # ── data classes ──────────────────────────────────────────────────────
 
 class CBPlayer:
-    def __init__(self, player_id: str, number: int, arena_w: int, arena_h: int):
+    def __init__(self, player_id: str, number: int, arena_w: int, arena_h: int, color: str = None):
         self.player_id  = player_id
         self.number     = number
-        self.color      = PLAYER_COLORS[number - 1]
+        self.color      = color or PLAYER_COLORS[number - 1]
         self.size       = PLAYER_SIZE  # kept for bot AI compat
 
         x, y, side, axis = _player_start(number, arena_w, arena_h)
@@ -204,8 +206,10 @@ class CrashBashGame(BaseHeadlessGame):
 
         # Build players (1-indexed numbers, up to 4)
         self.players: dict[str, CBPlayer] = {}
+        colors = self.config.get("colors", {})
         for i, pid in enumerate(player_ids[:4]):
-            p = CBPlayer(pid, i + 1, W, H)
+            color = colors.get(pid) or PLAYER_COLORS[i]
+            p = CBPlayer(pid, i + 1, W, H, color=color)
             self.players[pid] = p
 
         # 4 balls
@@ -336,30 +340,35 @@ class CrashBashGame(BaseHeadlessGame):
             if p.axis == "horizontal":
                 # Reflect on Y axis
                 if p.side == "top":
-                    # Ball came from below the paddle → push out below
                     ball.y = p.y + p.h + 1
-                    ball.dy = abs(ball.dy)          # always bounce downward
+                    ball.dy = abs(ball.dy)
                 else:  # bottom
                     ball.y = p.y - ball.size - 1
-                    ball.dy = -abs(ball.dy)         # always bounce upward
-
-                # Preserve / add horizontal push from player movement
+                    ball.dy = -abs(ball.dy)
                 ball.dx += ((1 if inp.right else 0) - (1 if inp.left else 0)) * (PLAYER_SPEED * BALL_PUSH)
 
             else:  # vertical paddle
-                # Reflect on X axis
                 if p.side == "left":
                     ball.x = p.x + p.w + 1
-                    ball.dx = abs(ball.dx)          # always bounce rightward
+                    ball.dx = abs(ball.dx)
                 else:  # right
                     ball.x = p.x - ball.size - 1
-                    ball.dx = -abs(ball.dx)         # always bounce leftward
-
+                    ball.dx = -abs(ball.dx)
                 ball.dy += ((1 if inp.down else 0) - (1 if inp.up else 0)) * (PLAYER_SPEED * BALL_PUSH)
 
             ball.increase_speed()
+
+            # Power hit: action button held → big speed boost
+            if inp.action:
+                spd = math.hypot(ball.dx, ball.dy)
+                boosted = min(spd * POWER_HIT_MULTIPLIER, POWER_HIT_MAX)
+                if spd > 0:
+                    ball.dx = ball.dx / spd * boosted
+                    ball.dy = ball.dy / spd * boosted
+                ball.current_speed = boosted
+
             ball.hit_cooldowns[p.player_id] = HIT_COOLDOWN
-            break   # one player collision per ball per tick
+            break
 
     # ── state snapshot ────────────────────────────────────────────────
 

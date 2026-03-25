@@ -849,10 +849,12 @@ function _hideCountdown(){
 // ═══════════════════════════════════════════════════════════ INPUT
 function buildInput(){
   const k = S.keys;
+  const action = !!(k[keyBindings.action]) || _actionLatch;
+  _actionLatch = false;   // consume latch — clears after exactly one poll
   return {
     up:     !!(k[keyBindings.up]),    down:  !!(k[keyBindings.down]),
     left:   !!(k[keyBindings.left]),  right: !!(k[keyBindings.right]),
-    action: !!(k[keyBindings.action]),
+    action,
   };
 }
 
@@ -949,16 +951,24 @@ function stopInputLoop(){
   window.addEventListener("mouseup",   e=>{ if(active) onEnd(e); });
 })();
 
+// ═══════════════════════════════════════════════════════════ ACTION LATCH
+// Problem: touchstart + touchend can both fire in <16ms, before the 33ms
+// input poll runs — so action is already false when buildInput() reads it.
+// Fix: latch action=true until the NEXT buildInput() call clears it.
+let _actionLatch = false;
+
+function latchAction(){
+  _actionLatch = true;
+}
+
 // Action button
 (function(){
   const btn = document.getElementById("actionBtn");
-  const set = v => { S.keys[keyBindings.action] = v; };
-  btn.addEventListener("touchstart",  e=>{ e.preventDefault(); set(true);  }, {passive:false});
-  btn.addEventListener("touchend",    e=>{ e.preventDefault(); set(false); }, {passive:false});
-  btn.addEventListener("touchcancel", e=>{ e.preventDefault(); set(false); }, {passive:false});
-  btn.addEventListener("mousedown",  ()=>set(true));
-  btn.addEventListener("mouseup",    ()=>set(false));
-  btn.addEventListener("mouseleave", ()=>set(false));
+  btn.addEventListener("touchstart",  e=>{ e.preventDefault(); latchAction(); btn.style.transform="scale(.88)"; }, {passive:false});
+  btn.addEventListener("touchend",    e=>{ e.preventDefault(); btn.style.transform=""; }, {passive:false});
+  btn.addEventListener("touchcancel", e=>{ e.preventDefault(); btn.style.transform=""; }, {passive:false});
+  btn.addEventListener("mousedown",  ()=>{ latchAction(); btn.style.transform="scale(.88)"; });
+  btn.addEventListener("mouseup",    ()=>{ btn.style.transform=""; });
 })();
 
 document.getElementById("mobileControls").style.display =
