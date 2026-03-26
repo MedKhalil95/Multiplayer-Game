@@ -38,6 +38,12 @@ CRATE_SPAWN_HI = 240        # 4 s
 
 PLAYER_COLORS = ["#5050DC", "#50C864", "#DCDC50","#DC5050"]
 
+# ── melee punch (action when no crate held) ───────────────────────────
+MELEE_RANGE    = 80          # px – max distance to land a punch
+MELEE_DAMAGE   = 15          # HP deducted per punch
+MELEE_KNOCKBACK = 8          # px applied toward target
+MELEE_COOLDOWN = 30          # ticks between punches (0.5 s at 60 tps)
+
 # ── health fruit ──────────────────────────────────────────────────────
 FRUIT_SIZE        = 20          # px square
 FRUIT_HEAL        = 30          # HP restored on pickup
@@ -73,6 +79,7 @@ class TNTPlayer:
         self.held_crate   = False       # bool: is holding a crate?
         self.last_move_x  = 0.0
         self.last_move_y  = -1.0        # default throw direction: upward
+        self.melee_cooldown = 0         # ticks until next punch is allowed
 
     @property
     def cx(self): return self.x + self.size / 2
@@ -100,6 +107,7 @@ class TNTPlayer:
             "eliminated": self.eliminated,
             "stunned":    self.stun > 0,
             "held_crate": self.held_crate,
+            "melee_ready": self.melee_cooldown <= 0,
         }
 
 
@@ -258,10 +266,14 @@ class TnTBattleGame(BaseHeadlessGame):
     def __init__(self, game_id: str, player_ids: list, config: dict = None):
         super().__init__(game_id, player_ids, config)
         W, H = self.ARENA_W, self.ARENA_H
+        color_map = (config or {}).get("colors", {})
 
         self.players: dict[str, TNTPlayer] = {}
         for i, pid in enumerate(player_ids[:4]):
-            self.players[pid] = TNTPlayer(pid, i + 1, W, H)
+            p = TNTPlayer(pid, i + 1, W, H)
+            if pid in color_map:
+                p.color = color_map[pid]
+            self.players[pid] = p
 
         self.pickup_crates:  list[PickupCrate]    = []
         self.thrown_crates:  list[ThrownCrate]    = []
@@ -326,6 +338,15 @@ class TnTBattleGame(BaseHeadlessGame):
                 self.thrown_crates.append(thrown)
                 p.held_crate = False
                 p.stun = THROW_STUN
+
+            # melee punch (action while NOT holding a crate)
+            elif not p.held_crate and inp.action and p.stun <= 0 and p.melee_cooldown <= 0:
+                self._melee_punch(p, alive)
+
+        # tick melee cooldowns
+        for p in alive:
+            if p.melee_cooldown > 0:
+                p.melee_cooldown -= 1
 
         # 3. Update thrown crates + hit detection ----------------------
         for tc in self.thrown_crates[:]:
@@ -396,6 +417,42 @@ class TnTBattleGame(BaseHeadlessGame):
         # boundary clamp (mirrors original: max 20, min w-20-size)
         p.x = self.clamp(p.x, 20, W - 20 - p.size)
         p.y = self.clamp(p.y, 20, H - 20 - p.size)
+
+    def _melee_punch(self, attacker: "TNTPlayer", alive: list):
+        """Deal melee damage to the nearest enemy within MELEE_RANGE."""
+        best, best_dist = None, float("inf")
+        for p in alive:
+            if p.player_id == attacker.player_id:
+                continue
+            d = math.hypot(attacker.cx - p.cx, attacker.cy - p.cy)
+            if d < best_dist:
+                best, best_dist = p, d
+
+        # Always apply cooldown to prevent spam, even on whiff
+        attacker.melee_cooldown = MELEE_COOLDOWN
+
+        if best is None or best_dist > MELEE_RANGE:
+            return   # whiff
+
+        best.hp -= MELEE_DAMAGE
+        dx = best.cx - attacker.cx
+        dy = best.cy - attacker.cy
+        dist = math.hypot(dx, dy) or 1.0
+        best.x += dx / dist * MELEE_KNOCKBACK
+        best.y += dy / dist * MELEE_KNOCKBACK
+        best.stun = max(best.stun, 8)
+
+        if best.hp <= 0:
+            best.hp = 0
+            best.eliminated = True
+
+        self.hit_events.append({
+            "owner_id":  attacker.player_id,
+            "target_id": best.player_id,
+            "melee":     True,
+            "x": best.cx,
+            "y": best.cy,
+        })
 
     def _throw(self, p: TNTPlayer) -> ThrownCrate:
         dx, dy = p.throw_direction()

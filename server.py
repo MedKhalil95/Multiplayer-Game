@@ -64,7 +64,7 @@ class RoomState:
     """
 
     def __init__(self, room_id, game_type, host_id, host_name,
-                 total_slots, bot_slots, bot_difficulty):
+                 total_slots, bot_slots, bot_difficulty, host_color=None):
 
         cfg         = GameFactory.CONFIGS[game_type]
         total_slots = min(total_slots, cfg["max_players"])
@@ -79,10 +79,10 @@ class RoomState:
         self.bot_difficulty = bot_difficulty
 
         # {pid: {name, ready, number, is_bot, color}}
-        host_color = PLAYER_COLOR_PALETTE[0]
+        chosen_color = host_color if host_color else PLAYER_COLOR_PALETTE[0]
         self.players: dict[str, dict] = {
             host_id: {"name": host_name, "ready": False,
-                      "number": 1, "is_bot": False, "color": host_color}
+                      "number": 1, "is_bot": False, "color": chosen_color}
         }
         self.status      = "waiting"
         self.game        = None
@@ -253,7 +253,21 @@ def _start_game(room: RoomState):
     bot_ids   = [f"bot_{i+1}_{room.room_id[:6]}" for i in range(room.bot_slots)]
     all_ids   = human_ids + bot_ids
 
-    room.game   = GameFactory.create(room.game_type, room.room_id, all_ids)
+    # Build per-player color map: humans use their chosen color,
+    # bots get a palette color not already taken.
+    taken   = room.taken_colors()
+    bot_palette = [c for c in PLAYER_COLOR_PALETTE if c not in taken]
+    color_map = {pid: room.players[pid]["color"] for pid in human_ids}
+    for i, bid in enumerate(bot_ids):
+        color_map[bid] = bot_palette[i % len(bot_palette)] if bot_palette else PLAYER_COLOR_PALETTE[i % len(PLAYER_COLOR_PALETTE)]
+
+    # Build per-player name map
+    name_map = {pid: room.players[pid]["name"] for pid in human_ids}
+    for i, bid in enumerate(bot_ids):
+        name_map[bid] = f"Bot {i+1}"
+
+    game_config = {"colors": color_map, "names": name_map}
+    room.game   = GameFactory.create(room.game_type, room.room_id, all_ids, game_config)
     room.status = "playing"
 
     for bid in bot_ids:
@@ -285,14 +299,16 @@ def _countdown_then_loop(room: RoomState):
 class CreateBody(BaseModel):
     game_type:      str  = "crash_bash"
     player_name:    str  = "Player"
+    player_color:   Optional[str] = None
     total_slots:    int  = Field(4, ge=2, le=4)
     bot_slots:      int  = Field(0, ge=0, le=3)
     bot_difficulty: str  = "medium"
     player_id:      Optional[str] = None
 
 class JoinBody(BaseModel):
-    player_name: str          = "Player"
-    player_id:   Optional[str] = None
+    player_name:  str           = "Player"
+    player_color: Optional[str] = None
+    player_id:    Optional[str] = None
 
 class ReadyBody(BaseModel):
     player_id: Optional[str] = None
@@ -335,7 +351,8 @@ def create_room(body: CreateBody,
     player_id = _pid(x_player_id, body.player_id)
     room_id   = uuid.uuid4().hex[:8]
     room      = RoomState(room_id, body.game_type, player_id, body.player_name,
-                          body.total_slots, body.bot_slots, body.bot_difficulty)
+                          body.total_slots, body.bot_slots, body.bot_difficulty,
+                          host_color=body.player_color)
 
     with rooms_lock:
         rooms[room_id] = room
@@ -369,8 +386,15 @@ def join_room(room_id: str, body: JoinBody,
         raise HTTPException(409, "Already in this room")
 
     number = room.human_count + 1
+    taken  = room.taken_colors()
+    if body.player_color and body.player_color not in taken:
+        join_color = body.player_color
+    else:
+        join_color = next((c for c in PLAYER_COLOR_PALETTE if c not in taken),
+                          PLAYER_COLOR_PALETTE[number % len(PLAYER_COLOR_PALETTE)])
     room.players[player_id] = {"name": body.player_name, "ready": False,
-                                "number": number, "is_bot": False}
+                                "number": number, "is_bot": False,
+                                "color": join_color}
     room.input_queues[player_id] = queue.Queue(maxsize=4)
 
     print(f"[room] join  id={room_id}  player={body.player_name}  "

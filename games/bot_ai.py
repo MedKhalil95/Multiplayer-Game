@@ -187,9 +187,28 @@ class TntBattleBot(BotAI):
         mx = me["x"] + me.get("size", 36) / 2
         my_ = me["y"] + me.get("size", 36) / 2
 
-        # If not holding a crate, go to nearest pickup crate (or health fruit)
+        enemies = self._others(state)
+
+        # ── No crate held ────────────────────────────────────────────
         if not me.get("held_crate"):
-            # Also pick up health fruits if low on HP
+            # Melee punch: if an enemy is within range and cooldown is up, punch!
+            melee_ready = me.get("melee_ready", True)
+            if melee_ready and enemies:
+                nearest_enemy = min(enemies, key=lambda p: dist(
+                    mx, my_,
+                    p["x"] + p.get("size", 36) / 2,
+                    p["y"] + p.get("size", 36) / 2))
+                ex = nearest_enemy["x"] + nearest_enemy.get("size", 36) / 2
+                ey = nearest_enemy["y"] + nearest_enemy.get("size", 36) / 2
+                enemy_dist = dist(mx, my_, ex, ey)
+                if enemy_dist < 75:   # within melee range → punch & chase
+                    inp = self._move_toward(ex, ey, mx, my_)
+                    return InputState(self.bot_id,
+                                      up=inp.up, down=inp.down,
+                                      left=inp.left, right=inp.right,
+                                      action=True)
+
+            # Otherwise go for health fruits or crates as usual
             targets = []
             if me.get("hp", 100) < 60:
                 for f in state.get("health_fruits", []):
@@ -205,8 +224,7 @@ class TntBattleBot(BotAI):
             # Wander toward centre if nothing to pick up
             return self._move_toward(self.ARENA_W / 2, self.ARENA_H / 2, mx, my_)
 
-        # Holding crate – chase nearest enemy
-        enemies = self._others(state)
+        # ── Holding crate – chase nearest enemy and throw ────────────
         if not enemies:
             return InputState.neutral(self.bot_id)
 
@@ -224,7 +242,6 @@ class TntBattleBot(BotAI):
                           up=inp.up, down=inp.down,
                           left=inp.left, right=inp.right,
                           action=throw)
-
 
 # ── factory ────────────────────────────────────────────────────────────
 

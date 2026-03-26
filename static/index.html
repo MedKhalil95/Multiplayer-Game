@@ -273,6 +273,13 @@ body.fs-open{overflow:hidden;position:fixed;width:100%}
 .notice{color:var(--muted);font-size:.83rem;margin:6px 0}
 .error-msg{color:var(--acc2);font-size:.83rem;margin:5px 0;min-height:18px}
 hr{border:none;border-top:1px solid var(--border);width:100%;margin:18px 0}
+
+/* color picker */
+.color-swatches{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+.color-swatch{width:30px;height:30px;border-radius:7px;cursor:pointer;
+              border:2.5px solid transparent;transition:.15s;flex-shrink:0}
+.color-swatch:hover{transform:scale(1.15)}
+.color-swatch.selected{border-color:#fff;outline:2px solid var(--acc);outline-offset:1px}
 </style>
 </head>
 <body>
@@ -306,6 +313,11 @@ hr{border:none;border-top:1px solid var(--border);width:100%;margin:18px 0}
     <div class="section">
       <label>Your name</label>
       <input type="text" id="createName" placeholder="Enter your name" maxlength="18" value="Player">
+    </div>
+
+    <div class="section">
+      <label>Your color</label>
+      <div class="color-swatches" id="createColorSwatches"></div>
     </div>
 
     <!-- ── PLAYER COUNT + SLOT CONFIGURATOR ── -->
@@ -346,6 +358,10 @@ hr{border:none;border-top:1px solid var(--border);width:100%;margin:18px 0}
     <div class="section">
       <label>Your name</label>
       <input type="text" id="joinName" placeholder="Enter your name" maxlength="18" value="Player">
+    </div>
+    <div class="section">
+      <label>Your color</label>
+      <div class="color-swatches" id="joinColorSwatches"></div>
     </div>
     <div class="section">
       <label>Room code</label>
@@ -445,10 +461,42 @@ const S = {
   hostId:   null,   // set when we join/create a room and on every game state
   sse: null, inputLoop: null, lastState: null, keys: {},
   pidToName: {},    // pid → display name, built from room slots
+  selectedColor: null,  // chosen player color hex
 };
 localStorage.setItem("pid", S.playerId);
 
 function rndId(){ return Math.random().toString(36).slice(2,10); }
+
+// ═══════════════════════════════════════════════════════════ COLOR PICKER
+const COLOR_PALETTE = [
+  "#DC5050","#5050DC","#50C864","#DCDC50",
+  "#DC50DC","#50DCDC","#FF8C00","#A0A0FF",
+];
+
+function initColorPicker(containerId, storageKey){
+  const saved = localStorage.getItem(storageKey) || COLOR_PALETTE[0];
+  if(!S.selectedColor) S.selectedColor = saved;
+  _renderSwatches(containerId, saved);
+}
+
+function _renderSwatches(containerId, selected){
+  const container = document.getElementById(containerId);
+  if(!container) return;
+  container.innerHTML = COLOR_PALETTE.map(c => `
+    <div class="color-swatch${c===selected?' selected':''}"
+         style="background:${c}"
+         title="${c}"
+         onclick="pickColor('${c}','${containerId}')"></div>
+  `).join("");
+}
+
+function pickColor(hex, containerId){
+  S.selectedColor = hex;
+  // sync both pickers to match
+  _renderSwatches("createColorSwatches", hex);
+  _renderSwatches("joinColorSwatches", hex);
+  localStorage.setItem("playerColor", hex);
+}
 
 // ═══════════════════════════════════════════════════════════ SLOT CONFIG
 // slotTypes[i] = "human" | "bot" | "empty"  for i = 0..3
@@ -591,6 +639,7 @@ async function createGame(){
   const body = {
     game_type:      S.gameType,
     player_name:    name,
+    player_color:   S.selectedColor || COLOR_PALETTE[0],
     total_slots:    total,
     bot_slots:      bots,
     bot_difficulty: document.getElementById("botDiff").value,
@@ -660,7 +709,8 @@ async function joinRoom(roomId, nameOverride){
     const res  = await fetch(`/api/rooms/${roomId}/join`,{
       method:"POST",
       headers:{"Content-Type":"application/json","X-Player-Id":S.playerId},
-      body: JSON.stringify({player_name:name, player_id:S.playerId}),
+      body: JSON.stringify({player_name:name, player_id:S.playerId,
+                            player_color: S.selectedColor || COLOR_PALETTE[0]}),
     });
     const data = await res.json();
     if(!res.ok) throw new Error(data.detail||data.error||"Could not join");
@@ -1275,9 +1325,23 @@ function renderTntBattle(s){
       ctx.fillStyle="#333"; ctx.fillRect(p.x,p.y-10,p.size,6);
       ctx.fillStyle=hpc;    ctx.fillRect(p.x,p.y-10,hpW,6);
       if(p.held_crate){ ctx.fillStyle="#a06428"; ctx.fillRect(p.x+p.size/2-8,p.y-24,16,14); }
+      // melee-ready indicator: small fist icon when no crate and cooldown is up
+      if(!p.held_crate && p.melee_ready){
+        ctx.font="11px sans-serif"; ctx.textAlign="center";
+        ctx.globalAlpha=0.75;
+        ctx.fillText("👊",p.x+p.size/2,p.y-26);
+        ctx.globalAlpha=1;
+      }
     }
     ctx.globalAlpha=1;
     drawPlayerLabel(p);
+  }
+
+  // melee hit flashes (👊 pop at impact point)
+  for(const ev of s.hit_events||[]){
+    if(!ev.melee) continue;
+    ctx.font="bold 20px sans-serif"; ctx.textAlign="center";
+    ctx.fillText("💥",ev.x, ev.y-8);
   }
 }
 
@@ -1392,6 +1456,11 @@ function leaveGame(){
 
 // ═══════════════════════════════════════════════════════════ INIT
 initSlots();
+// Init color pickers (synced — same color appears in both create & join)
+const _savedColor = localStorage.getItem("playerColor") || COLOR_PALETTE[0];
+S.selectedColor = _savedColor;
+initColorPicker("createColorSwatches", "playerColor");
+initColorPicker("joinColorSwatches",   "playerColor");
 </script>
 </body>
 </html>
