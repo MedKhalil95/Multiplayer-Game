@@ -24,7 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 sys.path.insert(0, str(Path(__file__).parent / "games"))
-from game_factory import GameFactory, BotFactory, InputState
+from games.game_factory import GameFactory, BotFactory, InputState
 
 # ── app ───────────────────────────────────────────────────────────────
 app = FastAPI(title="MultiGame Server", version="2.0")

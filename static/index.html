@@ -859,6 +859,85 @@ function onMsg(ev){
   }
 }
 
+// ═══════════════════════════════════════════════════════════ COUNTDOWN VOICE
+const _cdVoice = {
+  _synth: window.speechSynthesis || null,
+  _voice: null,
+  _ready: false,
+
+  // Known male voice names across Chrome/Edge/Firefox/macOS/iOS/Android
+  _MALE_NAMES: /\b(alex|daniel|fred|thomas|oliver|george|arthur|rishi|aaron|david|james|john|paul|mark|eric|brian|guy|carlos|diego|jorge|luca|reed|rock|sandy|wayne|viktor|stefan|yannick|eddy|nicolas|neel|aarav|otoya|ichiro|reed|ryan|tom|gordon|lee|bruce)\b/i,
+  _FEMALE_NAMES: /\b(samantha|victoria|karen|moira|tessa|fiona|allison|ava|susan|zoe|kate|emily|sarah|lisa|linda|claire|amelie|anna|joana|ellen|marie|lucia|rosa|alice|audrey|nora|paulina|zosia|milena|lekha)\b/i,
+
+  _isMale(v){
+    if(this._MALE_NAMES.test(v.name)) return true;
+    if(/male/i.test(v.name) && !/female/i.test(v.name)) return true;
+    if(this._FEMALE_NAMES.test(v.name)) return false;
+    return false;
+  },
+
+  _isMaleFound: false,
+
+  init(){
+    if(!this._synth) return;
+    const pick = () => {
+      const voices = this._synth.getVoices();
+      if(!voices.length) return;
+      // 1st: male English voice
+      let picked = voices.find(v => /en/i.test(v.lang) && this._isMale(v));
+      // 2nd: any English voice
+      if(!picked) picked = voices.find(v => /en/i.test(v.lang));
+      // 3rd: anything
+      if(!picked) picked = voices[0];
+      this._isMaleFound = !!(picked && this._isMale(picked));
+      this._voice = picked;
+      this._ready = true;
+    };
+    pick();
+    this._synth.onvoiceschanged = pick;
+  },
+
+  speak(text, { pitch=1, rate=0.85, volume=1 } = {}){
+    if(!this._synth) return;
+    this._synth.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    if(this._voice) u.voice = this._voice;
+    // If no confirmed male voice found, drop pitch hard to 0.6 to masculinise it
+    u.pitch  = this._isMaleFound ? pitch : Math.min(pitch, 0.6);
+    u.rate   = rate;
+    u.volume = volume;
+    u.lang   = "en-US";
+    this._synth.speak(u);
+  }
+};
+_cdVoice.init();
+
+function _speakCountdown(count){
+  if(count > 0){
+    // Bold, punchy numbers – slightly lower pitch, slow rate
+    _cdVoice.speak(String(count), { pitch: 0.85, rate: 0.78, volume: 1 });
+  } else {
+    // "GO!" – high energy: higher pitch, faster rate
+    _cdVoice.speak("Go!", { pitch: 1.25, rate: 1.1, volume: 1 });
+  }
+}
+
+function _speakGameOver(winPlayer, isLocalPlayer){
+  let phrase;
+  if(!winPlayer){
+    phrase = "It's a draw! Well played everyone.";
+  } else if(isLocalPlayer){
+    phrase = "You win! Congratulations!";
+  } else {
+    const name = winPlayer.is_bot
+      ? `Bot ${winPlayer.number}`
+      : (S.pidToName[winPlayer.player_id] || `Player ${winPlayer.number}`);
+    phrase = `${name} wins! Better luck next time.`;
+  }
+  // Small delay so the overlay animation doesn't clash with the voice
+  setTimeout(() => _cdVoice.speak(phrase, { pitch: 1.0, rate: 0.88, volume: 1 }), 400);
+}
+
 // ═══════════════════════════════════════════════════════════ COUNTDOWN
 function _showCountdown(count){
   const overlay = document.getElementById("countdownOverlay");
@@ -875,6 +954,7 @@ function _showCountdown(count){
     numEl.style.animation = "none";
     void numEl.offsetWidth;   // force reflow
     numEl.style.animation = "";
+    _speakCountdown(count);
   } else {
     // count === 0  →  "GO!"
     numEl.style.display = "none";
@@ -882,6 +962,7 @@ function _showCountdown(count){
     goEl.style.animation = "none";
     void goEl.offsetWidth;
     goEl.style.animation = "";
+    _speakCountdown(0);
     setTimeout(_hideCountdown, 800);
   }
 }
@@ -1406,6 +1487,9 @@ function showGameOver(s){
   }
 
   document.getElementById("gameOverlay").classList.add("show");
+
+  // ── voice announcement ─────────────────────────────────────────
+  _speakGameOver(winP, s.winner === S.playerId);
 }
 
 async function hostRematch(){
