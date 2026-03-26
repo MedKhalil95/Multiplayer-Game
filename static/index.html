@@ -627,6 +627,7 @@ document.addEventListener("keyup", e=>{ S.keys[e.key] = false; }, true);
 
 // ═══════════════════════════════════════════════════════════ CREATE
 async function createGame(){
+  _cdVoice.unlock();
   const name  = document.getElementById("createName").value.trim()||"Player";
   const btn   = document.getElementById("createBtn");
   btn.disabled = true; btn.textContent = "Creating…";
@@ -696,6 +697,7 @@ async function loadRooms(){
 }
 
 async function joinByCode(){
+  _cdVoice.unlock();
   const code = document.getElementById("joinCode").value.trim().toLowerCase();
   const name = document.getElementById("joinName").value.trim()||"Player";
   if(!code){ document.getElementById("joinError").textContent="Enter a room code"; return; }
@@ -777,6 +779,7 @@ function resetReadyBtn(){
 }
 
 async function sendReady(){
+  _cdVoice.unlock();
   if(readySent) return;
   readySent = true;
   const btn = document.getElementById("readyBtn");
@@ -859,51 +862,78 @@ function onMsg(ev){
   }
 }
 
-// ═══════════════════════════════════════════════════════════ COUNTDOWN VOICE
+// ═════════════════════════════════════════════════════════ COUNTDOWN VOICE
 const _cdVoice = {
   _synth: window.speechSynthesis || null,
   _voice: null,
-  _ready: false,
+  _unlocked: false,   // iOS needs a silent utterance fired inside a real tap first
+  _pending: null,     // speech queued before unlock
 
-  // Known male voice names across Chrome/Edge/Firefox/macOS/iOS/Android
-  _MALE_NAMES: /\b(alex|daniel|fred|thomas|oliver|george|arthur|rishi|aaron|david|james|john|paul|mark|eric|brian|guy|carlos|diego|jorge|luca|reed|rock|sandy|wayne|viktor|stefan|yannick|eddy|nicolas|neel|aarav|otoya|ichiro|reed|ryan|tom|gordon|lee|bruce)\b/i,
-  _FEMALE_NAMES: /\b(samantha|victoria|karen|moira|tessa|fiona|allison|ava|susan|zoe|kate|emily|sarah|lisa|linda|claire|amelie|anna|joana|ellen|marie|lucia|rosa|alice|audrey|nora|paulina|zosia|milena|lekha)\b/i,
+  // Male voice names known across iOS / Android / Windows / macOS / Chrome
+  _MALE_NAMES: /\b(alex|daniel|fred|thomas|oliver|george|arthur|rishi|aaron|david|james|john|paul|mark|eric|brian|guy|carlos|diego|jorge|luca|reed|rock|sandy|wayne|viktor|stefan|yannick|eddy|nicolas|neel|aarav|otoya|ichiro|ryan|tom|gordon|lee|bruce|felix|hans|henrik|tarik|onur|mehmet|ali|junior|en-us-x-sfg|en-us-x-iob|en-us-x-iom|en-gb-x-rjs|en-gb-x-gbd)\b/i,
+  _FEMALE_NAMES: /\b(samantha|victoria|karen|moira|tessa|fiona|allison|ava|susan|zoe|kate|emily|sarah|lisa|linda|claire|amelie|anna|joana|ellen|marie|lucia|rosa|alice|audrey|nora|paulina|zosia|milena|lekha|en-us-x-sfg-local|en-us-x-iol|en-gb-x-fis)\b/i,
 
   _isMale(v){
-    if(this._MALE_NAMES.test(v.name)) return true;
-    if(/male/i.test(v.name) && !/female/i.test(v.name)) return true;
-    if(this._FEMALE_NAMES.test(v.name)) return false;
+    const n = v.name + " " + v.voiceURI;
+    if(this._MALE_NAMES.test(n))            return true;
+    if(/\bmale\b/i.test(n) && !/female/i.test(n)) return true;
+    if(this._FEMALE_NAMES.test(n))          return false;
+    if(/google/i.test(n) && /male/i.test(n)) return true;
     return false;
   },
 
   _isMaleFound: false,
 
-  init(){
+  _pickVoice(){
     if(!this._synth) return;
-    const pick = () => {
-      const voices = this._synth.getVoices();
-      if(!voices.length) return;
-      // 1st: male English voice
-      let picked = voices.find(v => /en/i.test(v.lang) && this._isMale(v));
-      // 2nd: any English voice
-      if(!picked) picked = voices.find(v => /en/i.test(v.lang));
-      // 3rd: anything
-      if(!picked) picked = voices[0];
-      this._isMaleFound = !!(picked && this._isMale(picked));
-      this._voice = picked;
-      this._ready = true;
-    };
-    pick();
-    this._synth.onvoiceschanged = pick;
+    const voices = this._synth.getVoices();
+    if(!voices.length) return;
+    console.log("[Voice] Available:", voices.map(v => v.name + " (" + v.lang + ")").join(", "));
+    let picked = voices.find(v => /^en/i.test(v.lang) && this._isMale(v))
+              || voices.find(v => /^en/i.test(v.lang))
+              || voices[0];
+    this._isMaleFound = !!(picked && this._isMale(picked));
+    this._voice = picked;
+    console.log("[Voice] Using:", picked && picked.name, "| male:", this._isMaleFound);
   },
 
-  speak(text, { pitch=1, rate=0.85, volume=1 } = {}){
+  init(){
     if(!this._synth) return;
+    this._pickVoice();
+    this._synth.onvoiceschanged = () => this._pickVoice();
+  },
+
+  // Call inside every tap/button handler so iOS registers the audio session
+  unlock(){
+    if(this._unlocked || !this._synth) return;
+    const u = new SpeechSynthesisUtterance("\u00a0"); // non-breaking space = silent
+    u.volume = 0;
+    u.onend  = () => {
+      this._unlocked = true;
+      if(this._pending){
+        const { text, opts } = this._pending;
+        this._pending = null;
+        this._fire(text, opts);
+      }
+    };
+    this._synth.speak(u);
+  },
+
+  speak(text, opts = {}){
+    if(!this._synth) return;
+    if(!this._unlocked){
+      this._pending = { text, opts };
+      return;
+    }
+    this._fire(text, opts);
+  },
+
+  _fire(text, { pitch = 1, rate = 0.85, volume = 1 } = {}){
     this._synth.cancel();
     const u = new SpeechSynthesisUtterance(text);
     if(this._voice) u.voice = this._voice;
-    // If no confirmed male voice found, drop pitch hard to 0.6 to masculinise it
-    u.pitch  = this._isMaleFound ? pitch : Math.min(pitch, 0.6);
+    // No confirmed male voice? Force pitch to 0.55 — sounds convincingly deep
+    u.pitch  = this._isMaleFound ? pitch : Math.min(pitch, 0.55);
     u.rate   = rate;
     u.volume = volume;
     u.lang   = "en-US";
