@@ -21,9 +21,10 @@ def dist(ax, ay, bx, by):
 
 class BotAI:
     DIFFICULTY = {
-        "easy":   {"skip": 0.30, "noise": 0.40},
-        "medium": {"skip": 0.12, "noise": 0.20},
-        "hard":   {"skip": 0.03, "noise": 0.06},
+        # skip=chance of doing nothing (reaction lag), noise=chance of random move
+        "easy":   {"skip": 0.60, "noise": 0.65},
+        "medium": {"skip": 0.30, "noise": 0.35},
+        "hard":   {"skip": 0.08, "noise": 0.12},
     }
 
     def __init__(self, bot_id: str, difficulty: str = "medium"):
@@ -81,7 +82,8 @@ class CrashBashBot(BotAI):
         super().__init__(bot_id, difficulty)
         self._target_x = None  # smoothed target position
         self._target_y = None
-        self._smooth_factor = 0.15  # how quickly bot moves toward target
+        # Sluggish on easy, snappy on hard
+        self._smooth_factor = {"easy": 0.04, "medium": 0.09, "hard": 0.22}.get(difficulty, 0.09)
         
     def _think(self, state: dict) -> InputState:
         me = self._my(state)
@@ -122,9 +124,10 @@ class CrashBashBot(BotAI):
                 self._target_x += (desired_x - self._target_x) * self._smooth_factor
             
             diff = self._target_x - mx
+            dz = {"easy": 30, "medium": 14, "hard": 4}.get(self.difficulty, 14)
             return InputState(self.bot_id,
-                              left  = diff < -4,
-                              right = diff >  4)
+                              left  = diff < -dz,
+                              right = diff >  dz)
         else:
             desired_y = bcy - me.get("size", 36) / 2
             if random.random() < self._noise:
@@ -136,9 +139,10 @@ class CrashBashBot(BotAI):
                 self._target_y += (desired_y - self._target_y) * self._smooth_factor
             
             diff = self._target_y - my_
+            dz = {"easy": 30, "medium": 14, "hard": 4}.get(self.difficulty, 14)
             return InputState(self.bot_id,
-                              up   = diff < -4,
-                              down = diff >  4)
+                              up   = diff < -dz,
+                              down = diff >  dz)
 
 # ── TNT Battle bot ─────────────────────────────────────────────────────
 #
@@ -153,7 +157,7 @@ class TntBattleBot(BotAI):
         super().__init__(bot_id, difficulty)
         self._smooth_x = None
         self._smooth_y = None
-        self._smooth_factor = 0.2
+        self._smooth_factor = {"easy": 0.05, "medium": 0.12, "hard": 0.25}.get(difficulty, 0.12)
         
     def _move_toward(self, tx, ty, mx, my_) -> InputState:
         # Smooth target position
@@ -168,7 +172,7 @@ class TntBattleBot(BotAI):
         dy = self._smooth_y - my_
 
         # Add small random deadzone based on difficulty
-        deadzone = 8 if self.difficulty == "easy" else 4
+        deadzone = {"easy": 28, "medium": 14, "hard": 4}.get(self.difficulty, 14)
         return InputState(self.bot_id,
                           left  = dx < -deadzone,
                           right = dx > deadzone,
@@ -193,7 +197,9 @@ class TntBattleBot(BotAI):
         if not me.get("held_crate"):
             # Melee punch: if an enemy is within range and cooldown is up, punch!
             melee_ready = me.get("melee_ready", True)
-            if melee_ready and enemies:
+            # Easy bots never melee; medium/hard scale the trigger range
+            melee_range = {"easy": 0, "medium": 55, "hard": 75}.get(self.difficulty, 55)
+            if melee_ready and enemies and melee_range > 0:
                 nearest_enemy = min(enemies, key=lambda p: dist(
                     mx, my_,
                     p["x"] + p.get("size", 36) / 2,
@@ -201,7 +207,7 @@ class TntBattleBot(BotAI):
                 ex = nearest_enemy["x"] + nearest_enemy.get("size", 36) / 2
                 ey = nearest_enemy["y"] + nearest_enemy.get("size", 36) / 2
                 enemy_dist = dist(mx, my_, ex, ey)
-                if enemy_dist < 75:   # within melee range → punch & chase
+                if enemy_dist < melee_range:   # within melee range → punch & chase
                     inp = self._move_toward(ex, ey, mx, my_)
                     return InputState(self.bot_id,
                                       up=inp.up, down=inp.down,
@@ -235,8 +241,9 @@ class TntBattleBot(BotAI):
         ty = target["y"] + target.get("size", 36) / 2
         d  = dist(mx, my_, tx, ty)
 
-        # Throw when close enough
-        throw = d < 160
+        # Easy bots throw too early (inaccurate); hard bots wait for better range
+        throw_range = {"easy": 260, "medium": 175, "hard": 130}.get(self.difficulty, 175)
+        throw = d < throw_range
         inp = self._move_toward(tx, ty, mx, my_)
         return InputState(self.bot_id,
                           up=inp.up, down=inp.down,
