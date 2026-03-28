@@ -383,7 +383,18 @@ def join_room(room_id: str, body: JoinBody,
 
     player_id = _pid(x_player_id, body.player_id)
     if player_id in room.players:
-        raise HTTPException(409, "Already in this room")
+        # Player is rejoining (e.g. changed their name and came back).
+        # Just update their display name and color so they can re-ready.
+        room.players[player_id]["name"]  = body.player_name
+        room.players[player_id]["ready"] = False
+        if body.player_color and body.player_color not in room.taken_colors():
+            room.players[player_id]["color"] = body.player_color
+        room.broadcast({"_event": "player_joined", "slots": room.slots_dict(),
+                        "room_id": room_id})
+        return {"room_id": room_id, "player_id": player_id,
+                "number": room.players[player_id]["number"],
+                "status": room.status, "human_slots": room.human_slots,
+                "bot_slots": room.bot_slots, "slots": room.slots_dict()}
 
     number = room.human_count + 1
     taken  = room.taken_colors()
@@ -406,6 +417,45 @@ def join_room(room_id: str, body: JoinBody,
     return {"room_id": room_id, "player_id": player_id, "number": number,
             "status": room.status, "human_slots": room.human_slots,
             "bot_slots": room.bot_slots, "slots": room.slots_dict()}
+
+
+@app.post("/api/rooms/{room_id}/leave")
+def leave_room(room_id: str,
+               x_player_id: Optional[str] = Header(None)):
+    """
+    Remove a human player from a waiting room so they (or anyone with the
+    same player_id) can rejoin later after e.g. changing their name.
+    Only valid while the room is still in 'waiting' status.
+    The host cannot leave (they must disband the room by abandoning it).
+    """
+    room = rooms.get(room_id)
+    if not room:
+        raise HTTPException(404, "Room not found")
+    if room.status != "waiting":
+        raise HTTPException(409, "Cannot leave a room that has already started")
+
+    player_id = x_player_id or ""
+    if player_id not in room.players:
+        return {"status": "ok", "message": "Not in room"}
+
+    if player_id == room.host_id:
+        raise HTTPException(403, "Host cannot leave – close the room instead")
+
+    # Remove the player and their input queue
+    del room.players[player_id]
+    room.input_queues.pop(player_id, None)
+
+    # Re-number remaining humans so slots stay contiguous
+    for i, (pid, p) in enumerate(room.players.items()):
+        p["number"] = i + 1
+
+    print(f"[room] leave  id={room_id}  player={player_id}  "
+          f"remaining={room.human_count}/{room.human_slots}")
+
+    room.broadcast({"_event": "player_left", "slots": room.slots_dict(),
+                    "room_id": room_id})
+
+    return {"status": "ok", "slots": room.slots_dict()}
 
 
 @app.post("/api/rooms/{room_id}/ready")

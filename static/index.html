@@ -793,7 +793,16 @@ async function sendReady(){
 }
 
 function leaveRoom(){
+  // Tell the server to remove us from the waiting room so we can rejoin
+  // later (e.g. after changing name). Best-effort — ignore network errors.
+  if(S.roomId){
+    fetch(`/api/rooms/${S.roomId}/leave`, {
+      method: "POST",
+      headers: { "X-Player-Id": S.playerId },
+    }).catch(()=>{});
+  }
   if(S.sse){ S.sse.close(); S.sse = null; }
+  S.roomId = null;
   resetReadyBtn();
   showScreen("lobbyScreen");
 }
@@ -813,7 +822,7 @@ function onMsg(ev){
     });
   }
 
-  if(evt==="waiting"||evt==="player_joined"||evt==="ready_update"){
+  if(evt==="waiting"||evt==="player_joined"||evt==="ready_update"||evt==="player_left"){
     renderWaitSlots(msg.slots||[]);
     // game_starting event handles the actual transition; skip here to avoid
     // starting the input loop before the game object exists on the server
@@ -956,13 +965,13 @@ function _speakGameOver(winPlayer, isLocalPlayer){
   let phrase;
   if(!winPlayer){
     phrase = "It's a draw! Well played everyone.";
-  } else if(isLocalPlayer){
-    phrase = "You win! Congratulations!";
   } else {
+    // Always announce by name so every player hears who won, not "You win"
     const name = winPlayer.is_bot
       ? `Bot ${winPlayer.number}`
-      : (S.pidToName[winPlayer.player_id] || `Player ${winPlayer.number}`);
-    phrase = `${name} wins! Better luck next time.`;
+      : (S.pidToName[winPlayer.player_id] || winPlayer.name || `Player ${winPlayer.number}`);
+    const suffix = isLocalPlayer ? " Congratulations!" : " Better luck next time.";
+    phrase = `${name} wins!${suffix}`;
   }
   // Small delay so the overlay animation doesn't clash with the voice
   setTimeout(() => _cdVoice.speak(phrase, { pitch: 1.0, rate: 0.88, volume: 1 }), 400);
@@ -1477,10 +1486,9 @@ function showGameOver(s){
   const winP  = s.winner && s.players[s.winner];
   const isHost = S.playerId === S.hostId;
 
+  // Always display the winner's name so every player sees who won
   document.getElementById("winnerName").textContent =
-    winP ? (s.winner===S.playerId ? "🎉 You win!" :
-            (winP.is_bot ? `${playerName(winP)} wins` : `${playerName(winP)} wins`))
-         : "Draw";
+    winP ? `🎉 ${playerName(winP)} wins!` : "Draw";
 
   const rows = Object.values(s.players)
     .sort((a,b)=> s.game_type==="crash_bash" ? b.score-a.score : b.hp-a.hp)
