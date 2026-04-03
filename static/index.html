@@ -179,37 +179,64 @@ body.fs-open{overflow:hidden;position:fixed;width:100%}
                  justify-content:space-between;align-items:center;
                  padding:8px 16px;gap:12px;user-select:none}
 
-/* joystick */
+/* ── joystick ── */
 .joystick-zone{
-  width:130px;height:130px;border-radius:50%;
-  background:rgba(255,255,255,.06);border:2px solid rgba(255,255,255,.12);
+  width:148px;height:148px;border-radius:50%;
+  background:rgba(255,255,255,.055);border:2px solid rgba(255,255,255,.14);
   position:relative;flex-shrink:0;
   touch-action:none;-webkit-tap-highlight-color:transparent;
 }
 .joystick-knob{
-  width:52px;height:52px;border-radius:50%;
-  background:radial-gradient(circle at 35% 35%,#8880ff,#4a44cc);
-  border:2px solid rgba(255,255,255,.35);
-  box-shadow:0 4px 16px rgba(0,0,0,.5);
-  position:absolute;
-  top:50%;left:50%;
+  width:58px;height:58px;border-radius:50%;
+  background:radial-gradient(circle at 35% 35%,#9a94ff,#4a44cc);
+  border:2px solid rgba(255,255,255,.4);
+  box-shadow:0 4px 18px rgba(0,0,0,.55);
+  position:absolute;top:50%;left:50%;
   transform:translate(-50%,-50%);
   pointer-events:none;
-  transition:transform .05s;
 }
-/* direction arrows drawn in CSS */
-.joystick-zone::before{
-  content:'';display:block;position:absolute;inset:0;border-radius:50%;
-  background:
-    /* up arrow */
-    linear-gradient(180deg,rgba(255,255,255,.18) 0%,transparent 28%) 50% 4px/20px 24px no-repeat,
-    /* down arrow */
-    linear-gradient(0deg,rgba(255,255,255,.18) 0%,transparent 28%) 50% calc(100% - 4px)/20px 24px no-repeat,
-    /* left arrow */
-    linear-gradient(90deg,rgba(255,255,255,.18) 0%,transparent 28%) 4px 50%/24px 20px no-repeat,
-    /* right arrow */
-    linear-gradient(270deg,rgba(255,255,255,.18) 0%,transparent 28%) calc(100% - 4px) 50%/24px 20px no-repeat;
-  pointer-events:none;
+/* cardinal arrow indicators */
+.joystick-zone .joy-arrow{
+  position:absolute;pointer-events:none;width:0;height:0;opacity:.28;transition:opacity .07s;
+}
+.joystick-zone .joy-arrow.lit{opacity:.95}
+.joy-arrow.up{border-left:8px solid transparent;border-right:8px solid transparent;
+  border-bottom:13px solid #fff;top:8px;left:50%;transform:translateX(-50%)}
+.joy-arrow.dn{border-left:8px solid transparent;border-right:8px solid transparent;
+  border-top:13px solid #fff;bottom:8px;left:50%;transform:translateX(-50%)}
+.joy-arrow.lt{border-top:8px solid transparent;border-bottom:8px solid transparent;
+  border-right:13px solid #fff;left:8px;top:50%;transform:translateY(-50%)}
+.joy-arrow.rt{border-top:8px solid transparent;border-bottom:8px solid transparent;
+  border-left:13px solid #fff;right:8px;top:50%;transform:translateY(-50%)}
+
+/* ── D-pad (alternative mode) ── */
+.dpad{
+  display:none;position:relative;width:148px;height:148px;flex-shrink:0;
+  touch-action:none;-webkit-tap-highlight-color:transparent;
+}
+.dpad-btn{
+  position:absolute;width:48px;height:48px;border-radius:9px;
+  background:rgba(255,255,255,.10);border:2px solid rgba(255,255,255,.18);
+  display:flex;align-items:center;justify-content:center;
+  font-size:1.25rem;cursor:pointer;user-select:none;
+  -webkit-tap-highlight-color:transparent;transition:background .06s,border-color .06s;
+}
+.dpad-btn.pressed{background:rgba(108,99,255,.55);border-color:var(--acc)}
+.dpad-btn.up  {top:0;   left:50%;transform:translateX(-50%)}
+.dpad-btn.dn  {bottom:0;left:50%;transform:translateX(-50%)}
+.dpad-btn.lt  {left:0;  top:50%; transform:translateY(-50%)}
+.dpad-btn.rt  {right:0; top:50%; transform:translateY(-50%)}
+.dpad-center{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  width:34px;height:34px;border-radius:50%;
+  background:rgba(255,255,255,.06);border:1.5px solid rgba(255,255,255,.1)}
+
+/* toggle button sits below the control widget */
+.ctrl-wrap{position:relative;flex-shrink:0;padding-bottom:22px}
+.ctrl-toggle{
+  position:absolute;bottom:0;left:50%;transform:translateX(-50%);
+  font-size:.62rem;color:var(--muted);cursor:pointer;white-space:nowrap;
+  background:none;border:none;padding:2px 8px;text-decoration:underline dotted;
+  -webkit-tap-highlight-color:transparent;
 }
 
 .action-btn{width:80px;height:80px;border-radius:50%;background:var(--acc2);
@@ -430,8 +457,24 @@ hr{border:none;border-top:1px solid var(--border);width:100%;margin:18px 0}
   </div>
   <canvas id="gameCanvas" width="800" height="600"></canvas>
   <div class="mobile-controls" id="mobileControls">
-    <div class="joystick-zone" id="joystickZone">
-      <div class="joystick-knob" id="joystickKnob"></div>
+    <div class="ctrl-wrap">
+      <!-- Joystick mode (default) -->
+      <div class="joystick-zone" id="joystickZone">
+        <div class="joystick-knob" id="joystickKnob"></div>
+        <div class="joy-arrow up" id="joyUp"></div>
+        <div class="joy-arrow dn" id="joyDn"></div>
+        <div class="joy-arrow lt" id="joyLt"></div>
+        <div class="joy-arrow rt" id="joyRt"></div>
+      </div>
+      <!-- D-pad mode (hidden until toggled) -->
+      <div class="dpad" id="dpad">
+        <div class="dpad-btn up" id="dpUp">▲</div>
+        <div class="dpad-btn dn" id="dpDn">▼</div>
+        <div class="dpad-btn lt" id="dpLt">◀</div>
+        <div class="dpad-btn rt" id="dpRt">▶</div>
+        <div class="dpad-center"></div>
+      </div>
+      <button class="ctrl-toggle" id="ctrlToggle" onclick="toggleCtrlMode()">Switch to D-pad</button>
     </div>
     <button class="action-btn" id="actionBtn">🎯</button>
   </div>
@@ -1045,48 +1088,93 @@ function stopInputLoop(){
 }
 
 // ═══════════════════════════════════════════════════════════ MOBILE JOYSTICK
-(function(){
-  const zone  = document.getElementById("joystickZone");
-  const knob  = document.getElementById("joystickKnob");
-  const RADIUS = 38;   // max knob travel in px
-  const DEAD   = 14;   // dead-zone radius in px – no input below this
+// Redesigned for much better smartphone feel:
+//  • Per-axis dead zone (DEAD_AXIS) instead of radial – this means a small
+//    horizontal flick is enough to fire LEFT/RIGHT without needing to push far.
+//  • Separate X and Y thresholds so diagonal input is natural, not forced.
+//  • Knob tracks finger with zero transition delay (was .05s before).
+//  • Arrow indicators light up to give visual confirmation of direction.
+//  • D-pad alternative available via toggleCtrlMode().
+let _ctrlMode = localStorage.getItem('ctrlMode') || 'joy'; // 'joy' | 'dpad'
 
-  let active = false;
-  let originX = 0, originY = 0;
+function toggleCtrlMode(){
+  _ctrlMode = _ctrlMode === 'joy' ? 'dpad' : 'joy';
+  localStorage.setItem('ctrlMode', _ctrlMode);
+  _applyCtrlMode();
+}
+
+function _applyCtrlMode(){
+  const zone  = document.getElementById('joystickZone');
+  const dpad  = document.getElementById('dpad');
+  const label = document.getElementById('ctrlToggle');
+  if(_ctrlMode === 'dpad'){
+    zone.style.display = 'none';
+    dpad.style.display = 'block';
+    if(label) label.textContent = 'Switch to Joystick';
+  } else {
+    zone.style.display = '';
+    dpad.style.display = 'none';
+    if(label) label.textContent = 'Switch to D-pad';
+  }
+  // clear any held keys when switching
+  ['up','down','left','right'].forEach(d=>{ S.keys[keyBindings[d]] = false; });
+}
+
+// ── Joystick ──────────────────────────────────────────────────────────
+(function(){
+  const zone  = document.getElementById('joystickZone');
+  const knob  = document.getElementById('joystickKnob');
+  // Arrow indicator elements
+  const arrows = {
+    up: document.getElementById('joyUp'),
+    dn: document.getElementById('joyDn'),
+    lt: document.getElementById('joyLt'),
+    rt: document.getElementById('joyRt'),
+  };
+
+  const RADIUS   = 44;  // max knob visual travel in px (matches larger zone)
+  // Per-axis dead zone: only ~8px needed to register a direction press.
+  // Much more responsive than the old radial 14px threshold.
+  const DEAD_AXIS = 8;
+
+  let active = false, originX = 0, originY = 0;
 
   function getCenter(){
     const r = zone.getBoundingClientRect();
     return { x: r.left + r.width/2, y: r.top + r.height/2 };
   }
 
+  function setArrow(id, on){ if(arrows[id]) arrows[id].classList.toggle('lit', on); }
+
   function applyJoy(dx, dy){
-    const dist = Math.hypot(dx, dy);
+    // Clamp knob position visually inside the zone circle
+    const dist  = Math.hypot(dx, dy);
+    const ratio = Math.min(dist, RADIUS) / (dist || 1);
+    knob.style.transform =
+      `translate(calc(-50% + ${dx*ratio}px), calc(-50% + ${dy*ratio}px))`;
 
-    // Clamp knob visual to RADIUS
-    const ratio  = Math.min(dist, RADIUS) / (dist || 1);
-    const kx     = dx * ratio;
-    const ky     = dy * ratio;
-    knob.style.transform = `translate(calc(-50% + ${kx}px), calc(-50% + ${ky}px))`;
+    // Per-axis independent thresholds — each axis fires independently.
+    // This means you can go purely left/right without accidentally triggering up/down.
+    const goLeft  = dx < -DEAD_AXIS;
+    const goRight = dx >  DEAD_AXIS;
+    const goUp    = dy < -DEAD_AXIS;
+    const goDn    = dy >  DEAD_AXIS;
 
-    if(dist < DEAD){
-      S.keys[keyBindings.up]    = false;
-      S.keys[keyBindings.down]  = false;
-      S.keys[keyBindings.left]  = false;
-      S.keys[keyBindings.right] = false;
-      return;
-    }
+    S.keys[keyBindings.left]  = goLeft;
+    S.keys[keyBindings.right] = goRight;
+    S.keys[keyBindings.up]    = goUp;
+    S.keys[keyBindings.down]  = goDn;
 
-    // 8-way direction from angle — diagonals allowed
-    const angle = Math.atan2(dy, dx);  // -π to π, 0 = right
-    const DEG45 = Math.PI / 4;
-    S.keys[keyBindings.right] = angle > -DEG45 * 3 && angle <  DEG45;
-    S.keys[keyBindings.left]  = angle >  DEG45     || angle < -DEG45 * 3;
-    S.keys[keyBindings.up]    = angle > -DEG45 * 3 && angle < -DEG45;
-    S.keys[keyBindings.down]  = angle >  DEG45     && angle <  DEG45 * 3;
+    // Light up arrow indicators
+    setArrow('lt', goLeft);
+    setArrow('rt', goRight);
+    setArrow('up', goUp);
+    setArrow('dn', goDn);
   }
 
   function onStart(e){
     e.preventDefault();
+    if(_ctrlMode !== 'joy') return;
     active = true;
     const touch = e.touches ? e.touches[0] : e;
     const c = getCenter();
@@ -1095,7 +1183,7 @@ function stopInputLoop(){
   }
 
   function onMove(e){
-    if(!active) return;
+    if(!active || _ctrlMode !== 'joy') return;
     e.preventDefault();
     const touch = e.touches ? e.touches[0] : e;
     applyJoy(touch.clientX - originX, touch.clientY - originY);
@@ -1104,22 +1192,91 @@ function stopInputLoop(){
   function onEnd(e){
     e.preventDefault();
     active = false;
-    knob.style.transform = "translate(-50%, -50%)";
+    knob.style.transform = 'translate(-50%, -50%)';
     S.keys[keyBindings.up]    = false;
     S.keys[keyBindings.down]  = false;
     S.keys[keyBindings.left]  = false;
     S.keys[keyBindings.right] = false;
+    setArrow('up',false); setArrow('dn',false);
+    setArrow('lt',false); setArrow('rt',false);
   }
 
-  zone.addEventListener("touchstart",  onStart, {passive:false});
-  zone.addEventListener("touchmove",   onMove,  {passive:false});
-  zone.addEventListener("touchend",    onEnd,   {passive:false});
-  zone.addEventListener("touchcancel", onEnd,   {passive:false});
-  // Mouse fallback for desktop testing
-  zone.addEventListener("mousedown",  onStart);
-  window.addEventListener("mousemove", e=>{ if(active) onMove(e); });
-  window.addEventListener("mouseup",   e=>{ if(active) onEnd(e); });
+  zone.addEventListener('touchstart',  onStart, {passive:false});
+  zone.addEventListener('touchmove',   onMove,  {passive:false});
+  zone.addEventListener('touchend',    onEnd,   {passive:false});
+  zone.addEventListener('touchcancel', onEnd,   {passive:false});
+  zone.addEventListener('mousedown',   onStart);
+  window.addEventListener('mousemove', e=>{ if(active) onMove(e); });
+  window.addEventListener('mouseup',   e=>{ if(active) onEnd(e); });
 })();
+
+// ── D-pad ─────────────────────────────────────────────────────────────
+(function(){
+  const MAP = {dpUp:'up', dpDn:'down', dpLt:'left', dpRt:'right'};
+
+  function setDpadKey(binding, val){
+    S.keys[keyBindings[binding]] = val;
+    const elId = Object.keys(MAP).find(k => MAP[k] === binding);
+    if(elId){
+      const el = document.getElementById(elId);
+      if(el) el.classList.toggle('pressed', val);
+    }
+  }
+
+  // Track which touch identifiers are pressing which direction
+  const _dpTouches = {}; // identifier → direction
+
+  function dpStart(e){
+    e.preventDefault();
+    if(_ctrlMode !== 'dpad') return;
+    for(const t of e.changedTouches){
+      const el = document.elementFromPoint(t.clientX, t.clientY);
+      if(!el) continue;
+      const dir = MAP[el.id];
+      if(dir){ _dpTouches[t.identifier] = dir; setDpadKey(dir, true); }
+    }
+  }
+
+  function dpEnd(e){
+    e.preventDefault();
+    for(const t of e.changedTouches){
+      const dir = _dpTouches[t.identifier];
+      if(dir){ delete _dpTouches[t.identifier]; setDpadKey(dir, false); }
+    }
+  }
+
+  function dpMove(e){
+    e.preventDefault();
+    if(_ctrlMode !== 'dpad') return;
+    for(const t of e.changedTouches){
+      const el = document.elementFromPoint(t.clientX, t.clientY);
+      const newDir = el ? MAP[el.id] : null;
+      const oldDir = _dpTouches[t.identifier];
+      if(oldDir !== newDir){
+        if(oldDir) setDpadKey(oldDir, false);
+        if(newDir){ _dpTouches[t.identifier] = newDir; setDpadKey(newDir, true); }
+        else delete _dpTouches[t.identifier];
+      }
+    }
+  }
+
+  const dpad = document.getElementById('dpad');
+  dpad.addEventListener('touchstart',  dpStart, {passive:false});
+  dpad.addEventListener('touchmove',   dpMove,  {passive:false});
+  dpad.addEventListener('touchend',    dpEnd,   {passive:false});
+  dpad.addEventListener('touchcancel', dpEnd,   {passive:false});
+  // Mouse fallback per button
+  Object.keys(MAP).forEach(id=>{
+    const el = document.getElementById(id);
+    if(!el) return;
+    el.addEventListener('mousedown', ()=>setDpadKey(MAP[id], true));
+    el.addEventListener('mouseup',   ()=>setDpadKey(MAP[id], false));
+    el.addEventListener('mouseleave',()=>setDpadKey(MAP[id], false));
+  });
+})();
+
+// Apply saved control mode on load
+_applyCtrlMode();
 
 // ═══════════════════════════════════════════════════════════ ACTION LATCH
 // Problem: touchstart + touchend can both fire in <16ms, before the 33ms
