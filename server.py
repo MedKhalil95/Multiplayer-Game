@@ -13,7 +13,7 @@
 # 3. GET /api/rooms/{id}  – room detail endpoint for the waiting screen
 # 4. slots_dict() in broadcast so the waiting-room UI knows every seat
 
-import sys, os, json, uuid, time, threading, queue, random as _random
+import sys, os, json, uuid, time, threading, queue, random as _random, asyncio, io
 from pathlib import Path
 from typing import Optional
 
@@ -22,6 +22,13 @@ from fastapi.responses import JSONResponse, StreamingResponse, FileResponse, HTM
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+
+try:
+    import edge_tts
+    TTS_AVAILABLE = True
+except ImportError:
+    TTS_AVAILABLE = False
+    print("[tts] edge-tts not installed – run: pip install edge-tts")
 
 sys.path.insert(0, str(Path(__file__).parent / "games"))
 from games.game_factory import GameFactory, BotFactory, InputState
@@ -580,6 +587,47 @@ def index():
     p = STATIC_DIR / "index.html"
     return FileResponse(str(p)) if p.exists() else HTMLResponse(
         "<h2>Place static/index.html next to server.py</h2>")
+
+
+# ── TTS ──────────────────────────────────────────────────────────────
+
+# Male voices per language (edge-tts voice names)
+_TTS_MALE_VOICES: dict[str, str] = {
+    "en":    "en-US-GuyNeural",
+    "en-US": "en-US-GuyNeural",
+    "en-GB": "en-GB-RyanNeural",
+    "fr":    "fr-FR-HenriNeural",
+    "de":    "de-DE-ConradNeural",
+    "es":    "es-ES-AlvaroNeural",
+    "it":    "it-IT-DiegoNeural",
+    "ar":    "ar-SA-HamedNeural",
+}
+_TTS_DEFAULT_VOICE = "en-US-GuyNeural"
+
+class TTSBody(BaseModel):
+    text: str
+    lang: str  = "en"
+    voice: str = "male"   # frontend always sends "male"
+
+@app.post("/tts")
+async def tts(body: TTSBody):
+    if not TTS_AVAILABLE:
+        raise HTTPException(503, "edge-tts not installed on server")
+
+    voice = _TTS_MALE_VOICES.get(body.lang, _TTS_DEFAULT_VOICE)
+
+    buf = io.BytesIO()
+    communicate = edge_tts.Communicate(body.text, voice)
+    async for chunk in communicate.stream():
+        if chunk["type"] == "audio":
+            buf.write(chunk["data"])
+
+    buf.seek(0)
+    return Response(
+        content=buf.read(),
+        media_type="audio/mpeg",
+        headers={"Cache-Control": "no-cache"},
+    )
 
 
 # ── cleanup ───────────────────────────────────────────────────────────
