@@ -937,17 +937,35 @@ const _cdVoice = {
   _isMaleFound: false,
 
   _pickVoice(){
-    if(!this._synth) return;
-    const voices = this._synth.getVoices();
-    if(!voices.length) return;
-    console.log("[Voice] Available:", voices.map(v => v.name + " (" + v.lang + ")").join(", "));
-    let picked = voices.find(v => /^en/i.test(v.lang) && this._isMale(v))
-              || voices.find(v => /^en/i.test(v.lang))
-              || voices[0];
-    this._isMaleFound = !!(picked && this._isMale(picked));
-    this._voice = picked;
-    console.log("[Voice] Using:", picked && picked.name, "| male:", this._isMaleFound);
-  },
+  if(!this._synth) return;
+  const voices = this._synth.getVoices();
+  if(!voices.length) return;
+  
+  // Android Chrome specific: look for "Google UK English Male" or similar
+  let picked = voices.find(v => 
+    (v.name.includes("Male") || v.name.includes("male")) && 
+    /^en/i.test(v.lang)
+  );
+  
+  // Fallback: any male-sounding voice
+  if(!picked){
+    picked = voices.find(v => /^en/i.test(v.lang) && this._isMale(v));
+  }
+  
+  // Fallback: any English voice
+  if(!picked){
+    picked = voices.find(v => /^en/i.test(v.lang));
+  }
+  
+  // Fallback: first available
+  if(!picked && voices.length){
+    picked = voices[0];
+  }
+  
+  this._voice = picked;
+  const isMale = this._voice ? this._isMale(this._voice) : false;
+  console.log("[Voice] Using:", this._voice && this._voice.name, "| male:", isMale);
+},
 
   init(){
     if(!this._synth) return;
