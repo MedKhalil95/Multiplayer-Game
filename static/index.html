@@ -537,7 +537,7 @@ function pickColor(hex, containerId){
   S.selectedColor = hex;
   // sync both pickers to match
   _renderSwatches("createColorSwatches", hex);
-  _renderSwatches("joinColorSwatches", hex);
+  _renderSwatches("joinColorSwatches",   hex);
   localStorage.setItem("playerColor", hex);
 }
 
@@ -914,58 +914,57 @@ function onMsg(ev){
   }
 }
 
-// ═════════════════════════════════════════════════════════ COUNTDOWN VOICE
+// ═════════════════════════════════════════════════════════ COUNTDOWN VOICE - MALE ONLY
 const _cdVoice = {
   _synth: window.speechSynthesis || null,
   _voice: null,
-  _unlocked: false,   // iOS needs a silent utterance fired inside a real tap first
-  _pending: null,     // speech queued before unlock
+  _unlocked: false,
+  _pending: null,
 
-  // Male voice names known across iOS / Android / Windows / macOS / Chrome
-  _MALE_NAMES: /\b(alex|daniel|fred|thomas|oliver|george|arthur|rishi|aaron|david|james|john|paul|mark|eric|brian|guy|carlos|diego|jorge|luca|reed|rock|sandy|wayne|viktor|stefan|yannick|eddy|nicolas|neel|aarav|otoya|ichiro|ryan|tom|gordon|lee|bruce|felix|hans|henrik|tarik|onur|mehmet|ali|junior|en-us-x-sfg|en-us-x-iob|en-us-x-iom|en-gb-x-rjs|en-gb-x-gbd)\b/i,
-  _FEMALE_NAMES: /\b(samantha|victoria|karen|moira|tessa|fiona|allison|ava|susan|zoe|kate|emily|sarah|lisa|linda|claire|amelie|anna|joana|ellen|marie|lucia|rosa|alice|audrey|nora|paulina|zosia|milena|lekha|en-us-x-sfg-local|en-us-x-iol|en-gb-x-fis)\b/i,
+  // List of known male voice names across all platforms
+  _MALE_NAMES: /\b(alex|daniel|fred|thomas|oliver|george|arthur|rishi|aaron|david|james|john|paul|mark|eric|brian|guy|carlos|diego|jorge|luca|reed|rock|sandy|wayne|viktor|stefan|yannick|eddy|nicolas|neel|aarav|otoya|ichiro|ryan|tom|gordon|lee|bruce|felix|hans|henrik|tarik|onur|mehmet|ali|junior|microsoft|googleuk|google-uk|en-us-x-sfg|en-us-x-iob|en-us-x-iom|en-gb-x-rjs|en-gb-x-gbd)\b/i,
 
   _isMale(v){
-    const n = v.name + " " + v.voiceURI;
-    if(this._MALE_NAMES.test(n))            return true;
+    const n = (v.name + " " + v.voiceURI).toLowerCase();
+    // Check explicit male name patterns
+    if(this._MALE_NAMES.test(n)) return true;
+    // Check for "male" keyword in the name
     if(/\bmale\b/i.test(n) && !/female/i.test(n)) return true;
-    if(this._FEMALE_NAMES.test(n))          return false;
+    // Android specific: Google voices that don't specify gender
     if(/google/i.test(n) && /male/i.test(n)) return true;
+    // Default to false - we only want explicit male voices
     return false;
   },
 
-  _isMaleFound: false,
-
   _pickVoice(){
-  if(!this._synth) return;
-  const voices = this._synth.getVoices();
-  if(!voices.length) return;
-  
-  // Android Chrome specific: look for "Google UK English Male" or similar
-  let picked = voices.find(v => 
-    (v.name.includes("Male") || v.name.includes("male")) && 
-    /^en/i.test(v.lang)
-  );
-  
-  // Fallback: any male-sounding voice
-  if(!picked){
-    picked = voices.find(v => /^en/i.test(v.lang) && this._isMale(v));
-  }
-  
-  // Fallback: any English voice
-  if(!picked){
-    picked = voices.find(v => /^en/i.test(v.lang));
-  }
-  
-  // Fallback: first available
-  if(!picked && voices.length){
-    picked = voices[0];
-  }
-  
-  this._voice = picked;
-  const isMale = this._voice ? this._isMale(this._voice) : false;
-  console.log("[Voice] Using:", this._voice && this._voice.name, "| male:", isMale);
-},
+    if(!this._synth) return;
+    const voices = this._synth.getVoices();
+    if(!voices.length) return;
+    
+    console.log("[Voice] Available voices:", voices.map(v => v.name + " (" + v.lang + ")").join(", "));
+    
+    // Priority 1: Find an explicit male English voice
+    let picked = voices.find(v => /^en/i.test(v.lang) && this._isMale(v));
+    
+    // Priority 2: Any voice with "male" in the name (any language)
+    if(!picked){
+      picked = voices.find(v => v.name.toLowerCase().includes("male"));
+    }
+    
+    // Priority 3: Any English voice (fallback - will use low pitch)
+    if(!picked){
+      picked = voices.find(v => /^en/i.test(v.lang));
+    }
+    
+    // Priority 4: First available voice
+    if(!picked && voices.length){
+      picked = voices[0];
+    }
+    
+    this._voice = picked;
+    console.log("[Voice] Selected:", this._voice ? this._voice.name : "NONE", 
+                "| Is male:", this._voice ? this._isMale(this._voice) : false);
+  },
 
   init(){
     if(!this._synth) return;
@@ -973,10 +972,9 @@ const _cdVoice = {
     this._synth.onvoiceschanged = () => this._pickVoice();
   },
 
-  // Call inside every tap/button handler so iOS registers the audio session
   unlock(){
     if(this._unlocked || !this._synth) return;
-    const u = new SpeechSynthesisUtterance("\u00a0"); // non-breaking space = silent
+    const u = new SpeechSynthesisUtterance("\u00a0");
     u.volume = 0;
     u.onend  = () => {
       this._unlocked = true;
@@ -1001,12 +999,18 @@ const _cdVoice = {
   _fire(text, { pitch = 1, rate = 0.85, volume = 1 } = {}){
     this._synth.cancel();
     const u = new SpeechSynthesisUtterance(text);
+    
+    // Use the selected voice (preferring male if found)
     if(this._voice) u.voice = this._voice;
-    // No confirmed male voice? Force pitch to 0.55 — sounds convincingly deep
-    u.pitch  = this._isMaleFound ? pitch : Math.min(pitch, 0.55);
+    
+    // Force a deep, masculine pitch regardless of which voice was selected
+    // Lower pitch = deeper voice (0.4-0.6 sounds most masculine)
+    // Even if we got a female voice, this makes it sound male
+    u.pitch  = 0.5;   // Deep, masculine pitch
     u.rate   = rate;
     u.volume = volume;
     u.lang   = "en-US";
+    
     this._synth.speak(u);
   }
 };
@@ -1014,10 +1018,8 @@ _cdVoice.init();
 
 function _speakCountdown(count){
   if(count > 0){
-    // Bold, punchy numbers – slightly lower pitch, slow rate
     _cdVoice.speak(String(count), { pitch: 0.85, rate: 0.78, volume: 1 });
   } else {
-    // "GO!" – high energy: higher pitch, faster rate
     _cdVoice.speak("Go!", { pitch: 1.25, rate: 1.1, volume: 1 });
   }
 }
@@ -1027,14 +1029,12 @@ function _speakGameOver(winPlayer, isLocalPlayer){
   if(!winPlayer){
     phrase = "It's a draw! Well played everyone.";
   } else {
-    // Always announce by name so every player hears who won, not "You win"
     const name = winPlayer.is_bot
       ? `Bot ${winPlayer.number}`
       : (S.pidToName[winPlayer.player_id] || winPlayer.name || `Player ${winPlayer.number}`);
     const suffix = isLocalPlayer ? " Congratulations!" : " Better luck next time.";
     phrase = `${name} wins!${suffix}`;
   }
-  // Small delay so the overlay animation doesn't clash with the voice
   setTimeout(() => _cdVoice.speak(phrase, { pitch: 1.0, rate: 0.88, volume: 1 }), 400);
 }
 
@@ -1106,13 +1106,6 @@ function stopInputLoop(){
 }
 
 // ═══════════════════════════════════════════════════════════ MOBILE JOYSTICK
-// Redesigned for much better smartphone feel:
-//  • Per-axis dead zone (DEAD_AXIS) instead of radial – this means a small
-//    horizontal flick is enough to fire LEFT/RIGHT without needing to push far.
-//  • Separate X and Y thresholds so diagonal input is natural, not forced.
-//  • Knob tracks finger with zero transition delay (was .05s before).
-//  • Arrow indicators light up to give visual confirmation of direction.
-//  • D-pad alternative available via toggleCtrlMode().
 let _ctrlMode = localStorage.getItem('ctrlMode') || 'joy'; // 'joy' | 'dpad'
 
 function toggleCtrlMode(){
@@ -1134,7 +1127,6 @@ function _applyCtrlMode(){
     dpad.style.display = 'none';
     if(label) label.textContent = 'Switch to D-pad';
   }
-  // clear any held keys when switching
   ['up','down','left','right'].forEach(d=>{ S.keys[keyBindings[d]] = false; });
 }
 
@@ -1142,7 +1134,6 @@ function _applyCtrlMode(){
 (function(){
   const zone  = document.getElementById('joystickZone');
   const knob  = document.getElementById('joystickKnob');
-  // Arrow indicator elements
   const arrows = {
     up: document.getElementById('joyUp'),
     dn: document.getElementById('joyDn'),
@@ -1150,9 +1141,7 @@ function _applyCtrlMode(){
     rt: document.getElementById('joyRt'),
   };
 
-  const RADIUS   = 44;  // max knob visual travel in px (matches larger zone)
-  // Per-axis dead zone: only ~8px needed to register a direction press.
-  // Much more responsive than the old radial 14px threshold.
+  const RADIUS   = 44;
   const DEAD_AXIS = 8;
 
   let active = false, originX = 0, originY = 0;
@@ -1165,14 +1154,10 @@ function _applyCtrlMode(){
   function setArrow(id, on){ if(arrows[id]) arrows[id].classList.toggle('lit', on); }
 
   function applyJoy(dx, dy){
-    // Clamp knob position visually inside the zone circle
     const dist  = Math.hypot(dx, dy);
     const ratio = Math.min(dist, RADIUS) / (dist || 1);
-    knob.style.transform =
-      `translate(calc(-50% + ${dx*ratio}px), calc(-50% + ${dy*ratio}px))`;
+    knob.style.transform = `translate(calc(-50% + ${dx*ratio}px), calc(-50% + ${dy*ratio}px))`;
 
-    // Per-axis independent thresholds — each axis fires independently.
-    // This means you can go purely left/right without accidentally triggering up/down.
     const goLeft  = dx < -DEAD_AXIS;
     const goRight = dx >  DEAD_AXIS;
     const goUp    = dy < -DEAD_AXIS;
@@ -1183,7 +1168,6 @@ function _applyCtrlMode(){
     S.keys[keyBindings.up]    = goUp;
     S.keys[keyBindings.down]  = goDn;
 
-    // Light up arrow indicators
     setArrow('lt', goLeft);
     setArrow('rt', goRight);
     setArrow('up', goUp);
@@ -1241,8 +1225,7 @@ function _applyCtrlMode(){
     }
   }
 
-  // Track which touch identifiers are pressing which direction
-  const _dpTouches = {}; // identifier → direction
+  const _dpTouches = {};
 
   function dpStart(e){
     e.preventDefault();
@@ -1283,7 +1266,6 @@ function _applyCtrlMode(){
   dpad.addEventListener('touchmove',   dpMove,  {passive:false});
   dpad.addEventListener('touchend',    dpEnd,   {passive:false});
   dpad.addEventListener('touchcancel', dpEnd,   {passive:false});
-  // Mouse fallback per button
   Object.keys(MAP).forEach(id=>{
     const el = document.getElementById(id);
     if(!el) return;
@@ -1293,20 +1275,15 @@ function _applyCtrlMode(){
   });
 })();
 
-// Apply saved control mode on load
 _applyCtrlMode();
 
 // ═══════════════════════════════════════════════════════════ ACTION LATCH
-// Problem: touchstart + touchend can both fire in <16ms, before the 33ms
-// input poll runs — so action is already false when buildInput() reads it.
-// Fix: latch action=true until the NEXT buildInput() call clears it.
 let _actionLatch = false;
 
 function latchAction(){
   _actionLatch = true;
 }
 
-// Action button
 (function(){
   const btn = document.getElementById("actionBtn");
   btn.addEventListener("touchstart",  e=>{ e.preventDefault(); latchAction(); btn.style.transform="scale(.88)"; }, {passive:false});
@@ -1325,19 +1302,13 @@ const ctx    = canvas.getContext("2d");
 
 function resizeCanvas(W, H){
   const isFS  = _isFullscreen();
-
-  // On mobile, window.innerHeight includes the browser chrome (address bar).
-  // visualViewport.height is the actual visible area — use it when available.
   const vvW   = window.visualViewport ? window.visualViewport.width  : window.innerWidth;
   const vvH   = window.visualViewport ? window.visualViewport.height : window.innerHeight;
-
   const hudH  = document.querySelector(".game-hud")?.offsetHeight || 44;
   const mobEl = document.getElementById("mobileControls");
   const mobH  = (mobEl && mobEl.style.display !== "none") ? (mobEl.offsetHeight || 0) : 0;
-
   const mxW   = isFS ? vvW  : Math.min(vvW, 800);
   const mxH   = isFS ? (vvH - hudH - mobH) : (vvH - 110);
-
   const sc    = Math.min(mxW / W, mxH / H);
   canvas.style.width  = Math.floor(W * sc) + "px";
   canvas.style.height = Math.floor(H * sc) + "px";
@@ -1345,22 +1316,12 @@ function resizeCanvas(W, H){
   canvas.height = H;
 }
 
-// ── fullscreen ────────────────────────────────────────────────────
-// Strategy:
-//   1. Try the real Fullscreen API (Chrome, Firefox, Android Chrome)
-//   2. If unavailable (iOS Safari), apply a CSS fake-fullscreen class
-//      that uses position:fixed to cover the viewport instead.
-//
-// iOS Safari note: Apple does NOT support requestFullscreen on arbitrary
-// elements as of iOS 17. The fake-fs fallback gives the same visual result.
-
 const _fsSupported = !!(
   document.documentElement.requestFullscreen ||
   document.documentElement.webkitRequestFullscreen ||
   document.documentElement.mozRequestFullScreen
 );
 
-// Track fake-fs state separately from the real API
 let _fakeFS = false;
 
 function toggleFullscreen(){
@@ -1368,16 +1329,12 @@ function toggleFullscreen(){
   const inFS = _isFullscreen();
 
   if(!inFS){
-    // ── enter fullscreen ────────────────────────────────────────
     if(_fsSupported){
-      // Real API: request on the element itself (works on Android Chrome)
-      // Fall back to document.documentElement if element request fails
       const req = el.requestFullscreen       ||
                   el.webkitRequestFullscreen  ||
                   el.mozRequestFullScreen;
       if(req){
         req.call(el).catch(() => {
-          // Element request blocked (some browsers) – try document root
           const req2 = document.documentElement.requestFullscreen ||
                        document.documentElement.webkitRequestFullscreen;
           if(req2) req2.call(document.documentElement).catch(_enterFakeFS);
@@ -1385,11 +1342,8 @@ function toggleFullscreen(){
         return;
       }
     }
-    // Fallback for iOS Safari and anything else
     _enterFakeFS();
-
   } else {
-    // ── exit fullscreen ──────────────────────────────────────────
     if(_fakeFS){
       _exitFakeFS();
     } else {
@@ -1414,7 +1368,6 @@ function _enterFakeFS(){
   _fakeFS = true;
   document.getElementById("gameScreen").classList.add("fake-fs");
   document.body.classList.add("fs-open");
-  // Scroll to top so the fixed element starts at 0,0
   window.scrollTo(0, 0);
   _updateFsBtn();
   setTimeout(() => { if(S.lastState) renderGame(S.lastState); }, 60);
@@ -1428,7 +1381,6 @@ function _exitFakeFS(){
   setTimeout(() => { if(S.lastState) renderGame(S.lastState); }, 60);
 }
 
-// SVG paths: expand ↔ compress
 const _SVG_EXPAND  = '<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>';
 const _SVG_COMPRESS= '<polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="10" y1="14" x2="3" y2="21"/><line x1="21" y1="3" x2="14" y2="10"/>';
 
@@ -1441,12 +1393,10 @@ function _updateFsBtn(){
   if(S.lastState) renderGame(S.lastState);
 }
 
-// Real fullscreen change events (fired by the browser API)
 document.addEventListener("fullscreenchange",       _updateFsBtn);
 document.addEventListener("webkitfullscreenchange", _updateFsBtn);
 document.addEventListener("mozfullscreenchange",    _updateFsBtn);
 
-// Exit fake-fs when user presses Escape (mirrors real fullscreen)
 document.addEventListener("keydown", e => {
   if(e.key === "Escape" && _fakeFS){ _exitFakeFS(); return; }
   if((e.key === "f" || e.key === "F")){
@@ -1455,9 +1405,6 @@ document.addEventListener("keydown", e => {
   }
 });
 
-// ── orientation + viewport resize ────────────────────────────────
-// Fires on phone rotation and on-screen-keyboard appearing/hiding.
-// visualViewport is more accurate than window.resize on mobile.
 function _onViewportChange(){
   if(S.lastState) renderGame(S.lastState);
 }
@@ -1469,7 +1416,6 @@ if(window.visualViewport){
   window.addEventListener("resize",             _onViewportChange);
 }
 window.addEventListener("orientationchange", () => {
-  // Give the browser 200ms to finish rotating before recalculating
   setTimeout(_onViewportChange, 200);
 });
 
@@ -1479,7 +1425,6 @@ function renderGame(s){
   if(s.game_type==="tnt_battle") renderTntBattle(s);
 }
 
-// ── helpers ──
 function rr(x,y,w,h,r){
   ctx.beginPath();
   ctx.moveTo(x+r,y);
@@ -1490,9 +1435,7 @@ function rr(x,y,w,h,r){
   ctx.closePath();
 }
 
-// ── player name helpers ──
 function playerName(p){
-  // p is a player dict from game state
   if(p.is_bot) return `Bot ${p.number}`;
   return S.pidToName[p.player_id] || `P${p.number}`;
 }
@@ -1507,7 +1450,6 @@ function drawPlayerLabel(p){
   ctx.fillText(label, p.x + pw/2, p.y + ph/2);
 }
 
-// ── CRASH BASH ──
 function renderCrashBash(s){
   const W=s.arena_w, H=s.arena_h;
   ctx.fillStyle="#0a0a14"; ctx.fillRect(0,0,W,H);
@@ -1545,7 +1487,6 @@ function renderCrashBash(s){
   }
 }
 
-// ── TNT BATTLE ──
 function renderTntBattle(s){
   const W=s.arena_w, H=s.arena_h;
   ctx.fillStyle="#12122a"; ctx.fillRect(0,0,W,H);
@@ -1563,21 +1504,16 @@ function renderTntBattle(s){
     ctx.fillStyle=`rgba(200,150,60,${glow})`; ctx.fill();
   }
 
-  // ── health fruits ──
   for(const f of s.health_fruits||[]){
     const pulse = Math.abs(Math.sin((S.lastState?.tick||0)*.07))*.3+.1;
-    // outer glow
     ctx.beginPath(); ctx.arc(f.x+f.size/2, f.y+f.size/2, f.size/2+5, 0, Math.PI*2);
     ctx.fillStyle=`rgba(80,200,100,${pulse})`; ctx.fill();
-    // fruit body – circle
     ctx.beginPath(); ctx.arc(f.x+f.size/2, f.y+f.size/2, f.size/2, 0, Math.PI*2);
     ctx.fillStyle="#50C864"; ctx.fill();
     ctx.strokeStyle="#2a8c3a"; ctx.lineWidth=2; ctx.stroke();
-    // small leaf
     const lx=f.x+f.size/2, ly=f.y+2;
     ctx.beginPath(); ctx.ellipse(lx+4, ly-2, 5, 3, Math.PI/4, 0, Math.PI*2);
     ctx.fillStyle="#3db83d"; ctx.fill();
-    // ➕ cross inside
     ctx.strokeStyle="#fff"; ctx.lineWidth=2;
     ctx.beginPath();
     ctx.moveTo(f.x+f.size/2, f.y+4); ctx.lineTo(f.x+f.size/2, f.y+f.size-4);
@@ -1620,7 +1556,6 @@ function renderTntBattle(s){
       ctx.fillStyle="#333"; ctx.fillRect(p.x,p.y-10,p.size,6);
       ctx.fillStyle=hpc;    ctx.fillRect(p.x,p.y-10,hpW,6);
       if(p.held_crate){ ctx.fillStyle="#a06428"; ctx.fillRect(p.x+p.size/2-8,p.y-24,16,14); }
-      // melee-ready indicator: small fist icon when no crate and cooldown is up
       if(!p.held_crate && p.melee_ready){
         ctx.font="11px sans-serif"; ctx.textAlign="center";
         ctx.globalAlpha=0.75;
@@ -1632,7 +1567,6 @@ function renderTntBattle(s){
     drawPlayerLabel(p);
   }
 
-  // melee hit flashes (👊 pop at impact point)
   for(const ev of s.hit_events||[]){
     if(!ev.melee) continue;
     ctx.font="bold 20px sans-serif"; ctx.textAlign="center";
@@ -1640,7 +1574,6 @@ function renderTntBattle(s){
   }
 }
 
-// ── HUD ──
 function updateHud(s){
   document.getElementById("hudPlayers").innerHTML =
     Object.values(s.players).map(p=>{
@@ -1656,12 +1589,10 @@ function updateHud(s){
     }).join("");
 }
 
-// ═══════════════════════════════════════════════════════════ GAME OVER
 function showGameOver(s){
   const winP  = s.winner && s.players[s.winner];
   const isHost = S.playerId === S.hostId;
 
-  // Always display the winner's name so every player sees who won
   document.getElementById("winnerName").textContent =
     winP ? `🎉 ${playerName(winP)} wins!` : "Draw";
 
@@ -1676,38 +1607,31 @@ function showGameOver(s){
         <td>${medal}</td>
         <td style="color:${p.color}">${playerName(p)}${bot}${you}</td>
         <td style="text-align:right;font-weight:700">${val}</td>
-      </tr>`;
+      <tr>`;
     }).join("");
 
   document.getElementById("scoreTable").innerHTML = rows;
 
-  // ── action buttons depend on role ──────────────────────────────
   const actions = document.getElementById("rematchActions");
   if(isHost && S.roomId){
-    // Host sees "Play Again" (triggers rematch for everyone) + "Lobby"
     actions.innerHTML = `
       <button class="btn btn-primary" onclick="hostRematch()">🔄 Play Again</button>
       <button class="btn btn-secondary" onclick="goLobby()">Lobby</button>`;
   } else if(S.roomId){
-    // Guest sees spinner + "Leave" — they wait for the host
     actions.innerHTML = `
       <div class="rematch-waiting">Waiting for host to start a rematch…</div>
       <button class="btn btn-secondary" onclick="goLobby()">Leave</button>`;
   } else {
-    // No room (shouldn't happen, but safe fallback)
     actions.innerHTML = `
       <button class="btn btn-primary"   onclick="goLobby()">Lobby</button>`;
   }
 
   document.getElementById("gameOverlay").classList.add("show");
-
-  // ── voice announcement ─────────────────────────────────────────
   _speakGameOver(winP, s.winner === S.playerId);
 }
 
 async function hostRematch(){
   if(!S.roomId) return;
-  // Disable button immediately to prevent double-click
   const btn = document.querySelector("#rematchActions .btn-primary");
   if(btn){ btn.disabled = true; btn.textContent = "Starting…"; }
 
@@ -1720,8 +1644,6 @@ async function hostRematch(){
       const d = await res.json();
       throw new Error(d.detail || "Could not start rematch");
     }
-    // The server broadcasts rematch_called → onMsg handles the transition
-    // for all players including the host.
   }catch(e){
     alert(e.message);
     if(btn){ btn.disabled = false; btn.textContent = "🔄 Play Again"; }
@@ -1729,7 +1651,6 @@ async function hostRematch(){
 }
 
 function playAgain(){
-  // Generic "go back to lobby" — kept for backward compat with any stale references
   goLobby();
 }
 
@@ -1751,9 +1672,7 @@ function leaveGame(){
   showScreen("lobbyScreen");
 }
 
-// ═══════════════════════════════════════════════════════════ INIT
 initSlots();
-// Init color pickers (synced — same color appears in both create & join)
 const _savedColor = localStorage.getItem("playerColor") || COLOR_PALETTE[0];
 S.selectedColor = _savedColor;
 initColorPicker("createColorSwatches", "playerColor");
