@@ -670,6 +670,7 @@ document.addEventListener("keyup", e=>{ S.keys[e.key] = false; }, true);
 
 // ═══════════════════════════════════════════════════════════ CREATE
 async function createGame(){
+  _cdVoice.unlock();
   const name  = document.getElementById("createName").value.trim()||"Player";
   const btn   = document.getElementById("createBtn");
   btn.disabled = true; btn.textContent = "Creating…";
@@ -739,6 +740,7 @@ async function loadRooms(){
 }
 
 async function joinByCode(){
+  _cdVoice.unlock();
   const code = document.getElementById("joinCode").value.trim().toLowerCase();
   const name = document.getElementById("joinName").value.trim()||"Player";
   if(!code){ document.getElementById("joinError").textContent="Enter a room code"; return; }
@@ -820,6 +822,7 @@ function resetReadyBtn(){
 }
 
 async function sendReady(){
+  _cdVoice.unlock();
   if(readySent) return;
   readySent = true;
   const btn = document.getElementById("readyBtn");
@@ -911,63 +914,107 @@ function onMsg(ev){
   }
 }
 
-// ═════════════════════════════════════════════════════════ COUNTDOWN VOICE - TRUE MALE VOICE
+// ═════════════════════════════════════════════════════════ COUNTDOWN VOICE - MALE ONLY
 const _cdVoice = {
-  audio: null,
-  lang: "en",
+  _synth: window.speechSynthesis || null,
+  _voice: null,
+  _unlocked: false,
+  _pending: null,
 
-  // 🎮 Change voice style dynamically
-  styles: {
-    normal: { rate: 1.0 },
-    announcer: { rate: 0.95 },
-    hype: { rate: 1.1 }
+  // List of known male voice names across all platforms
+  _MALE_NAMES: /\b(alex|daniel|fred|thomas|oliver|george|arthur|rishi|aaron|david|james|john|paul|mark|eric|brian|guy|carlos|diego|jorge|luca|reed|rock|sandy|wayne|viktor|stefan|yannick|eddy|nicolas|neel|aarav|otoya|ichiro|ryan|tom|gordon|lee|bruce|felix|hans|henrik|tarik|onur|mehmet|ali|junior|microsoft|googleuk|google-uk|en-us-x-sfg|en-us-x-iob|en-us-x-iom|en-gb-x-rjs|en-gb-x-gbd)\b/i,
+
+  _isMale(v){
+    const n = (v.name + " " + v.voiceURI).toLowerCase();
+    // Check explicit male name patterns
+    if(this._MALE_NAMES.test(n)) return true;
+    // Check for "male" keyword in the name
+    if(/\bmale\b/i.test(n) && !/female/i.test(n)) return true;
+    // Android specific: Google voices that don't specify gender
+    if(/google/i.test(n) && /male/i.test(n)) return true;
+    // Default to false - we only want explicit male voices
+    return false;
   },
 
-  currentStyle: "announcer",
-
-  setLanguage(lang){
-    this.lang = lang;
-  },
-
-  setStyle(style){
-    this.currentStyle = style;
-  },
-
-  async speak(text){
-    try {
-      const res = await fetch("/tts", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          text: text,
-          lang: this.lang,
-          voice: "male"
-        })
-      });
-
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-
-      if(this.audio){
-        this.audio.pause();
-      }
-
-      this.audio = new Audio(url);
-
-      // 🎮 Game-style tuning
-      const style = this.styles[this.currentStyle] || {};
-      this.audio.playbackRate = style.rate || 1.0;
-
-      this.audio.play();
-
-    } catch (err){
-      console.error("TTS error:", err);
+  _pickVoice(){
+    if(!this._synth) return;
+    const voices = this._synth.getVoices();
+    if(!voices.length) return;
+    
+    console.log("[Voice] Available voices:", voices.map(v => v.name + " (" + v.lang + ")").join(", "));
+    
+    // Priority 1: Find an explicit male English voice
+    let picked = voices.find(v => /^en/i.test(v.lang) && this._isMale(v));
+    
+    // Priority 2: Any voice with "male" in the name (any language)
+    if(!picked){
+      picked = voices.find(v => v.name.toLowerCase().includes("male"));
     }
+    
+    // Priority 3: Any English voice (fallback - will use low pitch)
+    if(!picked){
+      picked = voices.find(v => /^en/i.test(v.lang));
+    }
+    
+    // Priority 4: First available voice
+    if(!picked && voices.length){
+      picked = voices[0];
+    }
+    
+    this._voice = picked;
+    console.log("[Voice] Selected:", this._voice ? this._voice.name : "NONE", 
+                "| Is male:", this._voice ? this._isMale(this._voice) : false);
+  },
+
+  init(){
+    if(!this._synth) return;
+    this._pickVoice();
+    this._synth.onvoiceschanged = () => this._pickVoice();
+  },
+
+  unlock(){
+    if(this._unlocked || !this._synth) return;
+    const u = new SpeechSynthesisUtterance("\u00a0");
+    u.volume = 0;
+    u.onend  = () => {
+      this._unlocked = true;
+      if(this._pending){
+        const { text, opts } = this._pending;
+        this._pending = null;
+        this._fire(text, opts);
+      }
+    };
+    this._synth.speak(u);
+  },
+
+  speak(text, opts = {}){
+    if(!this._synth) return;
+    if(!this._unlocked){
+      this._pending = { text, opts };
+      return;
+    }
+    this._fire(text, opts);
+  },
+
+  _fire(text, { pitch = 1, rate = 0.85, volume = 1 } = {}){
+    this._synth.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    
+    // Use the selected voice (preferring male if found)
+    if(this._voice) u.voice = this._voice;
+    
+    // Force a deep, masculine pitch regardless of which voice was selected
+    // Lower pitch = deeper voice (0.4-0.6 sounds most masculine)
+    // Even if we got a female voice, this makes it sound male
+    u.pitch  = 0.5;   // Deep, masculine pitch
+    u.rate   = rate;
+    u.volume = volume;
+    u.lang   = "en-US";
+    
+    this._synth.speak(u);
   }
 };
-
+_cdVoice.init();
 
 function _speakCountdown(count){
   if(count > 0){
