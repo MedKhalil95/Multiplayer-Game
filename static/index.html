@@ -987,19 +987,13 @@ const _cdVoice = {
     this._synth.speak(u);
   },
 
-  speak(text) {
-    const msg = new SpeechSynthesisUtterance(text);
-    const voices = window.speechSynthesis.getVoices();
-    
-    // Use the same male voice selection logic
-    const maleVoice = voices.find(v => 
-      v.name.toLowerCase().includes('male') || 
-      v.name.toLowerCase().includes('en-us-x-sfg#male')
-    );
-
-    if (maleVoice) msg.voice = maleVoice;
-    msg.pitch = 0.3;
-    window.speechSynthesis.speak(msg);
+  speak(text, opts = {}){
+    if(!this._synth) return;
+    if(!this._unlocked){
+      this._pending = { text, opts };
+      return;
+    }
+    this._fire(text, opts);
   },
 
   _fire(text, { pitch = 1, rate = 0.85, volume = 1 } = {}){
@@ -1030,29 +1024,18 @@ function _speakCountdown(count){
   }
 }
 
-function _speakGameOver(winnerName, isYou) {
-  const text = isYou ? `Victory! ${winnerName} wins!` : `Game Over. ${winnerName} is the winner.`;
-  const msg = new SpeechSynthesisUtterance(text);
-
-  // Get all available system voices
-  const voices = window.speechSynthesis.getVoices();
-
-  // Logic to find a male voice (common identifiers on Android/Chrome)
-  const maleVoice = voices.find(v => 
-    v.name.toLowerCase().includes('male') || 
-    v.name.toLowerCase().includes('guy') || 
-    v.name.toLowerCase().includes('en-us-x-sfg#male') // Specific Google/Android male tag
-  );
-
-  if (maleVoice) {
-    msg.voice = maleVoice;
+function _speakGameOver(winPlayer, isLocalPlayer){
+  let phrase;
+  if(!winPlayer){
+    phrase = "It's a draw! Well played everyone.";
+  } else {
+    const name = winPlayer.is_bot
+      ? `Bot ${winPlayer.number}`
+      : (S.pidToName[winPlayer.player_id] || winPlayer.name || `Player ${winPlayer.number}`);
+    const suffix = isLocalPlayer ? " Congratulations!" : " Better luck next time.";
+    phrase = `${name} wins!${suffix}`;
   }
-
-  // Adjust pitch slightly lower to ensure a masculine tone if a specific voice isn't found
-  msg.pitch = 0.25; 
-  msg.rate = 1.0;
-
-  window.speechSynthesis.speak(msg);
+  setTimeout(() => _cdVoice.speak(phrase, { pitch: 1.0, rate: 0.88, volume: 1 }), 400);
 }
 
 // ═══════════════════════════════════════════════════════════ COUNTDOWN
