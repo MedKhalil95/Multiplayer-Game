@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<link rel="icon" href="data:,">
 <title>MultiGame</title>
 <style>
 :root {
@@ -1024,18 +1025,44 @@ function _speakCountdown(count){
   }
 }
 
+const _cortexLaugh = new Audio("sounds/cortex-laugh.mp3");
+
+function _playCortexLaughTwice(){
+  _cortexLaugh.currentTime = 0;
+  _cortexLaugh.play().catch(()=>{});
+  _cortexLaugh.onended = () => {
+    _cortexLaugh.onended = null;
+    setTimeout(() => {
+      _cortexLaugh.currentTime = 0;
+      _cortexLaugh.play().catch(()=>{});
+    }, 300);
+  };
+}
+
 function _speakGameOver(winPlayer, isLocalPlayer){
-  let phrase;
-  if(!winPlayer){
-    phrase = "It's a draw! Well played everyone.";
-  } else {
+  setTimeout(() => {
+    if(!winPlayer){
+      _playCortexLaughTwice();
+      return;
+    }
     const name = winPlayer.is_bot
       ? `Bot ${winPlayer.number}`
       : (S.pidToName[winPlayer.player_id] || winPlayer.name || `Player ${winPlayer.number}`);
-    const suffix = isLocalPlayer ? " Congratulations!" : " Better luck next time.";
-    phrase = `${name} wins!${suffix}`;
-  }
-  setTimeout(() => _cdVoice.speak(phrase, { pitch: 1.0, rate: 0.88, volume: 1 }), 400);
+
+    if(!_cdVoice._synth){
+      _playCortexLaughTwice();
+      return;
+    }
+    _cdVoice._synth.cancel();
+    const u = new SpeechSynthesisUtterance(name);
+    if(_cdVoice._voice) u.voice = _cdVoice._voice;
+    u.pitch  = 1.0;
+    u.rate   = 0.88;
+    u.volume = 1;
+    u.lang   = "en-US";
+    u.onend  = () => _playCortexLaughTwice();
+    _cdVoice._synth.speak(u);
+  }, 400);
 }
 
 // ═══════════════════════════════════════════════════════════ COUNTDOWN

@@ -35,6 +35,10 @@ STATIC_DIR = Path(__file__).parent / "static"
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
+SOUNDS_DIR = Path(__file__).parent / "sounds"
+if SOUNDS_DIR.exists():
+    app.mount("/sounds", StaticFiles(directory=str(SOUNDS_DIR)), name="sounds")
+
 rooms: dict[str, "RoomState"] = {}
 rooms_lock = threading.Lock()
 
