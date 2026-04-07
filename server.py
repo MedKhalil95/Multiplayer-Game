@@ -35,10 +35,6 @@ STATIC_DIR = Path(__file__).parent / "static"
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-SOUNDS_DIR = Path(__file__).parent / "sounds"
-if SOUNDS_DIR.exists():
-    app.mount("/sounds", StaticFiles(directory=str(SOUNDS_DIR)), name="sounds")
-
 rooms: dict[str, "RoomState"] = {}
 rooms_lock = threading.Lock()
 
@@ -381,11 +377,20 @@ def join_room(room_id: str, body: JoinBody,
               x_player_id: Optional[str] = Header(None)):
 
     room = rooms.get(room_id)
-    if not room:           raise HTTPException(404, "Room not found")
-    if room.status != "waiting": raise HTTPException(409, "Game already started")
-    if room.is_full:       raise HTTPException(409, "Room is full")
+    if not room: raise HTTPException(404, "Room not found")
 
     player_id = _pid(x_player_id, body.player_id)
+
+    # Allow a known player to rejoin after a page refresh mid-game
+    if room.status in ("playing", "finished") and player_id in room.players:
+        return {"room_id": room_id, "player_id": player_id,
+                "number": room.players[player_id]["number"],
+                "status": room.status, "human_slots": room.human_slots,
+                "bot_slots": room.bot_slots, "host_id": room.host_id,
+                "slots": room.slots_dict()}
+
+    if room.status != "waiting": raise HTTPException(409, "Game already started")
+    if room.is_full:             raise HTTPException(409, "Room is full")
     if player_id in room.players:
         # Player is rejoining (e.g. changed their name and came back).
         # Just update their display name and color so they can re-ready.

@@ -3,7 +3,6 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<link rel="icon" href="data:,">
 <title>MultiGame</title>
 <style>
 :root {
@@ -703,6 +702,7 @@ async function createGame(){
     S.roomId  = data.room_id;
     S.hostId  = data.player_id;   // creator is always host
     S.pidToName[S.playerId] = name;  // store own name
+    localStorage.setItem("playerName", name);
     // populate bot names from slots
     if(data.slots) data.slots.forEach(sl => { if(sl.pid && sl.name) S.pidToName[sl.pid] = sl.name; });
     enterRoom(data.room_id, data.status==="playing");
@@ -762,6 +762,7 @@ async function joinRoom(roomId, nameOverride){
     if(!res.ok) throw new Error(data.detail||data.error||"Could not join");
     S.roomId = roomId;
     S.pidToName[S.playerId] = name;  // store own name
+    localStorage.setItem("playerName", name);
     // server returns host_id in the join response via lobby_dict fields
     if(data.host_id) S.hostId = data.host_id;
     if(data.slots) data.slots.forEach(sl => { if(sl.pid && sl.name) S.pidToName[sl.pid] = sl.name; });
@@ -772,6 +773,9 @@ async function joinRoom(roomId, nameOverride){
 // ═══════════════════════════════════════════════════════════ ROOM ENTRY
 function enterRoom(roomId, alreadyPlaying){
   if(S.sse){ S.sse.close(); S.sse = null; }
+  // Persist session so page refresh can rejoin
+  sessionStorage.setItem("roomId",   roomId);
+  sessionStorage.setItem("playerId", S.playerId);
   S.sse = new EventSource(`/api/rooms/${roomId}/stream`);
   S.sse.onmessage  = onMsg;
   S.sse.onerror    = ()=>console.warn("SSE reconnecting…");
@@ -1686,6 +1690,8 @@ function goLobby(){
   stopInputLoop();
   if(S.sse){ S.sse.close(); S.sse=null; }
   S.roomId=null; S.hostId=null; S.pidToName={};
+  sessionStorage.removeItem("roomId");
+  sessionStorage.removeItem("playerId");
   resetReadyBtn();
   showScreen("lobbyScreen");
 }
@@ -1694,10 +1700,45 @@ function leaveGame(){
   stopInputLoop();
   if(S.sse){ S.sse.close(); S.sse=null; }
   S.roomId=null; S.hostId=null;
+  sessionStorage.removeItem("roomId");
+  sessionStorage.removeItem("playerId");
   document.getElementById("gameOverlay").classList.remove("show");
   resetReadyBtn();
   showScreen("lobbyScreen");
 }
+
+// ══════════════════════════════════════════════ AUTO-REJOIN ON REFRESH
+(async function tryRejoin(){
+  const savedRoom = sessionStorage.getItem("roomId");
+  const savedPid  = sessionStorage.getItem("playerId");
+  if(!savedRoom || !savedPid) return;
+
+  // Make sure our playerId matches the saved one
+  S.playerId = savedPid;
+  localStorage.setItem("pid", savedPid);
+
+  try{
+    const res  = await fetch(`/api/rooms/${savedRoom}/join`, {
+      method: "POST",
+      headers: {"Content-Type":"application/json","X-Player-Id": savedPid},
+      body: JSON.stringify({player_name: localStorage.getItem("playerName")||"Player",
+                            player_id: savedPid}),
+    });
+    if(!res.ok){ sessionStorage.removeItem("roomId"); return; }
+    const data = await res.json();
+
+    S.roomId = savedRoom;
+    if(data.host_id) S.hostId = data.host_id;
+    if(data.slots) data.slots.forEach(sl=>{ if(sl.pid && sl.name) S.pidToName[sl.pid]=sl.name; });
+
+    const playing  = data.status === "playing";
+    const finished = data.status === "finished";
+    enterRoom(savedRoom, playing || finished);
+    if(finished && S.lastState) showGameOver(S.lastState);
+  }catch(e){
+    sessionStorage.removeItem("roomId");
+  }
+})();
 
 initSlots();
 const _savedColor = localStorage.getItem("playerColor") || COLOR_PALETTE[0];
