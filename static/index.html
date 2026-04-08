@@ -523,6 +523,120 @@ function initColorPicker(containerId, storageKey){
   _renderSwatches(containerId, saved);
 }
 
+// ═══════════════════════════════════════════════════════════ PERSONAL KIT SYSTEM
+// Like PES/FIFA: you always see yourself in YOUR chosen kit.
+// Opponents keep their server-assigned color unless it visually clashes with yours,
+// in which case they get a unique contrast color on YOUR screen only.
+// This is purely local — other players see their own remapped view.
+
+// Distinct "away kit" colors used only for opponents when their color clashes with you.
+// These are kept visually distinct from the main palette for clarity.
+const OPPONENT_CONTRAST_COLORS = [
+  "#FF6B35",  // vivid orange
+  "#00D4AA",  // teal-mint
+  "#FF3FA4",  // hot pink
+  "#B8FF3F",  // lime green
+  "#9B59B6",  // purple
+  "#1ABC9C",  // emerald
+];
+
+/**
+ * Returns a display-color map  { pid -> hexColor }  for the local viewer.
+ *
+ * Rules:
+ *  1. Local player always gets S.selectedColor (their chosen kit).
+ *  2. Every other player keeps their server color…
+ *  3. …unless it's too close to the local player's color, in which case
+ *     they're assigned a unique contrast color from OPPONENT_CONTRAST_COLORS.
+ *  4. No two opponents share the same contrast color on this screen.
+ */
+function resolveDisplayColors(players) {
+  const myId   = S.playerId;
+  const myKit  = S.selectedColor || COLOR_PALETTE[0];
+
+  const displayMap = {};
+  const usedContrast = new Set();
+
+  // Pass 1: assign local player their kit
+  for (const [pid] of Object.entries(players)) {
+    if (pid === myId) {
+      displayMap[pid] = myKit;
+    }
+  }
+
+  // Pass 2: assign opponents
+  let contrastIdx = 0;
+  for (const [pid, p] of Object.entries(players)) {
+    if (pid === myId) continue;
+
+    const serverColor = p.color;
+    const clashes = _colorsClash(serverColor, myKit);
+
+    if (!clashes) {
+      displayMap[pid] = serverColor;
+    } else {
+      // Pick next unused contrast color
+      let picked = null;
+      while (contrastIdx < OPPONENT_CONTRAST_COLORS.length) {
+        const candidate = OPPONENT_CONTRAST_COLORS[contrastIdx++];
+        if (!usedContrast.has(candidate)) {
+          picked = candidate;
+          usedContrast.add(candidate);
+          break;
+        }
+      }
+      // Fallback: cycle through contrast palette if we ran out
+      if (!picked) picked = OPPONENT_CONTRAST_COLORS[(contrastIdx - 1) % OPPONENT_CONTRAST_COLORS.length];
+      displayMap[pid] = picked;
+    }
+  }
+
+  return displayMap;
+}
+
+/**
+ * Returns true when two hex colors are visually too similar to tell apart
+ * on the game canvas (Euclidean distance in RGB space, threshold ~80/255).
+ */
+function _colorsClash(hexA, hexB) {
+  if (!hexA || !hexB) return false;
+  const [r1,g1,b1] = _hexToRgb(hexA);
+  const [r2,g2,b2] = _hexToRgb(hexB);
+  const dist = Math.sqrt((r1-r2)**2 + (g1-g2)**2 + (b1-b2)**2);
+  return dist < 80;
+}
+
+function _hexToRgb(hex) {
+  const n = parseInt(hex.replace("#",""), 16);
+  return [(n>>16)&255, (n>>8)&255, n&255];
+}
+
+/**
+ * Deep-clone the state, replacing each player's color with the
+ * local viewer's resolved display color.  Does NOT mutate the original.
+ */
+function applyPersonalKit(state) {
+  if (!state || !state.players) return state;
+  const colorMap = resolveDisplayColors(state.players);
+  // Shallow-clone state, deep-clone just the players map
+  const patched = Object.assign({}, state, { players: {} });
+  for (const [pid, p] of Object.entries(state.players)) {
+    patched.players[pid] = Object.assign({}, p, {
+      color: colorMap[pid] || p.color,
+    });
+  }
+  // Also patch goals in crash_bash so your goal matches your kit
+  if (state.goals) {
+    patched.goals = {};
+    for (const [pid, g] of Object.entries(state.goals)) {
+      patched.goals[pid] = Object.assign({}, g, {
+        color: colorMap[pid] || g.color,
+      });
+    }
+  }
+  return patched;
+}
+
 function _renderSwatches(containerId, selected){
   const container = document.getElementById(containerId);
   if(!container) return;
@@ -797,7 +911,21 @@ function enterRoom(roomId, alreadyPlaying){
 function renderWaitSlots(slots){
   const c = document.getElementById("waitSlots");
   if(!slots.length){ c.innerHTML = '<div class="notice">Connecting…</div>'; return; }
-  c.innerHTML = slots.map(s=>{
+
+  // Show a "your kit" reminder at the top when there are multiple players
+  const myKit = S.selectedColor || COLOR_PALETTE[0];
+  const kitBanner = slots.length > 1 ? `
+    <div style="display:flex;align-items:center;gap:8px;padding:7px 14px;
+                margin-bottom:6px;background:rgba(255,255,255,.04);
+                border:1.5px solid var(--border);border-radius:8px;font-size:.8rem;color:var(--muted)">
+      👕 Your kit:
+      <span style="display:inline-block;width:20px;height:20px;border-radius:5px;
+                   background:${myKit};border:2px solid rgba(255,255,255,.25);flex-shrink:0"></span>
+      <span style="color:var(--text)">${myKit}</span>
+      <span style="margin-left:auto;font-size:.72rem;opacity:.7">(opponents see their own kit)</span>
+    </div>` : "";
+
+  c.innerHTML = kitBanner + slots.map(s=>{
     const isYou = s.pid === S.playerId;
     let cls = "wait-slot";
     if(s.is_bot)         cls += " bot-slot";
@@ -809,8 +937,9 @@ function renderWaitSlots(slots){
     const badge = s.is_bot ? "🤖 Bot"
                 : s.filled ? (s.ready ? "✅ Ready" : "⏳ Waiting")
                 : "";
+    const dotStyle = isYou ? `style="background:${myKit}"` : "";
     return `<div class="${cls}">
-      <div class="wait-dot"></div>
+      <div class="wait-dot" ${dotStyle}></div>
       <span class="wait-name">${icon} ${name}</span>
       <span class="wait-status">${badge}</span>
     </div>`;
@@ -1501,9 +1630,10 @@ window.addEventListener("orientationchange", () => {
 });
 
 function renderGame(s){
-  resizeCanvas(s.arena_w||800, s.arena_h||600);
-  if(s.game_type==="crash_bash") renderCrashBash(s);
-  if(s.game_type==="tnt_battle") renderTntBattle(s);
+  const ps = applyPersonalKit(s);   // apply local player's kit remapping
+  resizeCanvas(ps.arena_w||800, ps.arena_h||600);
+  if(ps.game_type==="crash_bash") renderCrashBash(ps);
+  if(ps.game_type==="tnt_battle") renderTntBattle(ps);
 }
 
 function rr(x,y,w,h,r){
@@ -1656,8 +1786,9 @@ function renderTntBattle(s){
 }
 
 function updateHud(s){
+  const ps = applyPersonalKit(s);   // use kit-resolved colors in HUD too
   document.getElementById("hudPlayers").innerHTML =
-    Object.values(s.players).map(p=>{
+    Object.values(ps.players).map(p=>{
       const val  = s.game_type==="crash_bash" ? p.score : p.hp+" HP";
       const elim = p.eliminated?" hud-elim":"";
       const bot  = p.is_bot===true ? `<span class="hud-bot">BOT</span>` : "";
@@ -1671,13 +1802,14 @@ function updateHud(s){
 }
 
 function showGameOver(s){
-  const winP  = s.winner && s.players[s.winner];
+  const ps = applyPersonalKit(s);   // kit colors in scoreboard too
+  const winP  = s.winner && ps.players[s.winner];
   const isHost = S.playerId === S.hostId;
 
   document.getElementById("winnerName").textContent =
     winP ? `🎉 ${playerName(winP)} wins!` : "Draw";
 
-  const rows = Object.values(s.players)
+  const rows = Object.values(ps.players)
     .sort((a,b)=> s.game_type==="crash_bash" ? b.score-a.score : b.hp-a.hp)
     .map((p,i)=>{
       const medal=["🥇","🥈","🥉",""][i]||"";
