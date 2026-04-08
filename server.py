@@ -381,24 +381,33 @@ def join_room(room_id: str, body: JoinBody,
               x_player_id: Optional[str] = Header(None)):
 
     room = rooms.get(room_id)
-    if not room:           raise HTTPException(404, "Room not found")
-    if room.status != "waiting": raise HTTPException(409, "Game already started")
-    if room.is_full:       raise HTTPException(409, "Room is full")
+    if not room: raise HTTPException(404, "Room not found")
 
     player_id = _pid(x_player_id, body.player_id)
+
+    # ── Known player reconnecting (e.g. after a page refresh) ──────────
+    # This check MUST come before the status/full guards so that a player
+    # who refreshes mid-game is let back in instead of getting a 409.
     if player_id in room.players:
-        # Player is rejoining (e.g. changed their name and came back).
-        # Just update their display name and color so they can re-ready.
-        room.players[player_id]["name"]  = body.player_name
-        room.players[player_id]["ready"] = False
+        p = room.players[player_id]
+        # Keep name/color fresh from the reconnect payload
+        p["name"] = body.player_name or p["name"]
         if body.player_color and body.player_color not in room.taken_colors():
-            room.players[player_id]["color"] = body.player_color
-        room.broadcast({"_event": "player_joined", "slots": room.slots_dict(),
-                        "room_id": room_id})
+            p["color"] = body.player_color
+        # Only reset ready flag when still in waiting room
+        if room.status == "waiting":
+            p["ready"] = False
+            room.broadcast({"_event": "player_joined", "slots": room.slots_dict(),
+                            "room_id": room_id})
         return {"room_id": room_id, "player_id": player_id,
-                "number": room.players[player_id]["number"],
+                "number": p["number"],
                 "status": room.status, "human_slots": room.human_slots,
-                "bot_slots": room.bot_slots, "slots": room.slots_dict()}
+                "bot_slots": room.bot_slots, "slots": room.slots_dict(),
+                "host_id": room.host_id}
+
+    # ── New player joining ──────────────────────────────────────────────
+    if room.status != "waiting": raise HTTPException(409, "Game already started")
+    if room.is_full:             raise HTTPException(409, "Room is full")
 
     number = room.human_count + 1
     taken  = room.taken_colors()

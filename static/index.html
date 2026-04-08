@@ -703,6 +703,7 @@ async function createGame(){
     S.roomId  = data.room_id;
     S.hostId  = data.player_id;   // creator is always host
     S.pidToName[S.playerId] = name;  // store own name
+    localStorage.setItem("playerName", name);
     // populate bot names from slots
     if(data.slots) data.slots.forEach(sl => { if(sl.pid && sl.name) S.pidToName[sl.pid] = sl.name; });
     enterRoom(data.room_id, data.status==="playing");
@@ -762,6 +763,7 @@ async function joinRoom(roomId, nameOverride){
     if(!res.ok) throw new Error(data.detail||data.error||"Could not join");
     S.roomId = roomId;
     S.pidToName[S.playerId] = name;  // store own name
+    localStorage.setItem("playerName", name);
     // server returns host_id in the join response via lobby_dict fields
     if(data.host_id) S.hostId = data.host_id;
     if(data.slots) data.slots.forEach(sl => { if(sl.pid && sl.name) S.pidToName[sl.pid] = sl.name; });
@@ -771,6 +773,10 @@ async function joinRoom(roomId, nameOverride){
 
 // ═══════════════════════════════════════════════════════════ ROOM ENTRY
 function enterRoom(roomId, alreadyPlaying){
+  // Persist so a page refresh can reconnect
+  localStorage.setItem("roomId",   roomId);
+  localStorage.setItem("gameType", S.gameType);
+
   if(S.sse){ S.sse.close(); S.sse = null; }
   S.sse = new EventSource(`/api/rooms/${roomId}/stream`);
   S.sse.onmessage  = onMsg;
@@ -845,6 +851,8 @@ function leaveRoom(){
       headers: { "X-Player-Id": S.playerId },
     }).catch(()=>{});
   }
+  localStorage.removeItem("roomId");
+  localStorage.removeItem("gameType");
   if(S.sse){ S.sse.close(); S.sse = null; }
   S.roomId = null;
   resetReadyBtn();
@@ -974,6 +982,7 @@ const _cdVoice = {
   },
 
   unlock(){
+    _sfx.unlock();   // also unlock the Web Audio context on this gesture
     if(this._unlocked || !this._synth) return;
     const u = new SpeechSynthesisUtterance("\u00a0");
     u.volume = 0;
@@ -1025,18 +1034,60 @@ function _speakCountdown(count){
   }
 }
 
-const _cortexLaugh = new Audio("sounds/cortex-laugh.mp3");
+// ── iOS-safe audio engine using Web Audio API ──────────────────────────
+// iOS Safari blocks HTMLAudioElement unless created inside a tap handler.
+// Web Audio API decodes once into an AudioBuffer and plays via AudioContext,
+// which is unlocked on the first user gesture (same tap that calls _cdVoice.unlock).
+const _sfx = {
+  _ctx: null,
+  _buf: null,        // decoded AudioBuffer for cortex-laugh
+  _unlocked: false,
+
+  // Call once from any user-gesture handler (already done via _cdVoice.unlock)
+  unlock(){
+    if(this._unlocked) return;
+    try {
+      this._ctx = new (window.AudioContext || window.webkitAudioContext)();
+      // Resume context – required on iOS after creation
+      if(this._ctx.state === "suspended") this._ctx.resume();
+      this._unlocked = true;
+      this._load();
+    } catch(e){ console.warn("[sfx] AudioContext failed:", e); }
+  },
+
+  _load(){
+    if(!this._ctx || this._buf) return;
+    fetch("sounds/cortex-laugh.mp3")
+      .then(r => r.arrayBuffer())
+      .then(ab => this._ctx.decodeAudioData(ab, buf => { this._buf = buf; }))
+      .catch(e => console.warn("[sfx] load failed:", e));
+  },
+
+  // Play the buffer once; call onDone() when it ends (or immediately on failure)
+  play(onDone){
+    if(!this._ctx || !this._buf){
+      // AudioContext not ready yet – try unlocking now then play once loaded
+      if(onDone) onDone();
+      return;
+    }
+    try {
+      if(this._ctx.state === "suspended") this._ctx.resume();
+      const src = this._ctx.createBufferSource();
+      src.buffer = this._buf;
+      src.connect(this._ctx.destination);
+      if(onDone) src.onended = onDone;
+      src.start(0);
+    } catch(e){
+      console.warn("[sfx] play failed:", e);
+      if(onDone) onDone();
+    }
+  }
+};
 
 function _playCortexLaughTwice(){
-  _cortexLaugh.currentTime = 0;
-  _cortexLaugh.play().catch(()=>{});
-  _cortexLaugh.onended = () => {
-    _cortexLaugh.onended = null;
-    setTimeout(() => {
-      _cortexLaugh.currentTime = 0;
-      _cortexLaugh.play().catch(()=>{});
-    }, 300);
-  };
+  _sfx.play(() => {
+    setTimeout(() => _sfx.play(), 300);
+  });
 }
 
 function _speakGameOver(winPlayer, isLocalPlayer){
@@ -1049,15 +1100,18 @@ function _speakGameOver(winPlayer, isLocalPlayer){
       ? `Bot ${winPlayer.number}`
       : (S.pidToName[winPlayer.player_id] || winPlayer.name || `Player ${winPlayer.number}`);
 
+    // Build the announcement phrase
+    const phrase = isLocalPlayer ? `${name} wins!` : `${name} wins!`;
+
     if(!_cdVoice._synth){
       _playCortexLaughTwice();
       return;
     }
     _cdVoice._synth.cancel();
-    const u = new SpeechSynthesisUtterance(name);
+    const u = new SpeechSynthesisUtterance(phrase);
     if(_cdVoice._voice) u.voice = _cdVoice._voice;
-    u.pitch  = 1.0;
-    u.rate   = 0.88;
+    u.pitch  = 0.5;
+    u.rate   = 0.82;
     u.volume = 1;
     u.lang   = "en-US";
     u.onend  = () => _playCortexLaughTwice();
@@ -1686,6 +1740,8 @@ function goLobby(){
   stopInputLoop();
   if(S.sse){ S.sse.close(); S.sse=null; }
   S.roomId=null; S.hostId=null; S.pidToName={};
+  localStorage.removeItem("roomId");
+  localStorage.removeItem("gameType");
   resetReadyBtn();
   showScreen("lobbyScreen");
 }
@@ -1694,6 +1750,8 @@ function leaveGame(){
   stopInputLoop();
   if(S.sse){ S.sse.close(); S.sse=null; }
   S.roomId=null; S.hostId=null;
+  localStorage.removeItem("roomId");
+  localStorage.removeItem("gameType");
   document.getElementById("gameOverlay").classList.remove("show");
   resetReadyBtn();
   showScreen("lobbyScreen");
@@ -1704,6 +1762,45 @@ const _savedColor = localStorage.getItem("playerColor") || COLOR_PALETTE[0];
 S.selectedColor = _savedColor;
 initColorPicker("createColorSwatches", "playerColor");
 initColorPicker("joinColorSwatches",   "playerColor");
+
+// ═══════════════════════════════════════════════════════════ REFRESH RECONNECT
+// If the player had an active room when they refreshed, silently rejoin it.
+(async function tryReconnect(){
+  const savedRoom = localStorage.getItem("roomId");
+  const savedType = localStorage.getItem("gameType");
+  if(!savedRoom) return;
+
+  // Restore gameType so enterRoom labels the waiting screen correctly
+  if(savedType) S.gameType = savedType;
+
+  try{
+    // First check whether the room still exists and we're still in it
+    const res = await fetch(`/api/rooms/${savedRoom}/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Player-Id": S.playerId },
+      body: JSON.stringify({
+        player_name: localStorage.getItem("playerName") || "Player",
+        player_color: S.selectedColor || COLOR_PALETTE[0],
+        player_id: S.playerId,
+      }),
+    });
+    if(!res.ok){
+      // Room gone or we were never in it — clean up and stay on lobby
+      localStorage.removeItem("roomId");
+      localStorage.removeItem("gameType");
+      return;
+    }
+    const data = await res.json();
+    S.roomId = savedRoom;
+    if(data.host_id) S.hostId = data.host_id;
+    if(data.slots) data.slots.forEach(sl => { if(sl.pid && sl.name) S.pidToName[sl.pid] = sl.name; });
+    enterRoom(savedRoom, data.status === "playing");
+  } catch(_){
+    // Network error — just stay on lobby, don't block startup
+    localStorage.removeItem("roomId");
+    localStorage.removeItem("gameType");
+  }
+})();
 </script>
 </body>
 </html>
