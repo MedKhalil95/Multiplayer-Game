@@ -343,6 +343,13 @@ class TnTBattleGame(BaseHeadlessGame):
             elif not p.held_crate and inp.action and p.stun <= 0 and p.melee_cooldown <= 0:
                 self._melee_punch(p, alive)
 
+        # 2b. Resolve player–player solid body collisions ---------------
+        # Run a few iterations so multi-player pile-ups fully separate.
+        for _ in range(3):
+            for i in range(len(alive)):
+                for j in range(i + 1, len(alive)):
+                    self._separate_players(alive[i], alive[j], W, H)
+
         # tick melee cooldowns
         for p in alive:
             if p.melee_cooldown > 0:
@@ -397,6 +404,42 @@ class TnTBattleGame(BaseHeadlessGame):
         return self.get_state()
 
     # ── helpers ───────────────────────────────────────────────────────
+
+    def _separate_players(self, a: "TNTPlayer", b: "TNTPlayer", W: int, H: int):
+        """
+        Push two overlapping players apart so they don't clip through each other.
+        Uses AABB overlap: find the axis of minimum penetration and push each
+        player out by half the overlap on that axis.
+        """
+        # AABB overlap depths
+        overlap_x = (a.size + b.size) / 2 - abs(a.cx - b.cx)
+        overlap_y = (a.size + b.size) / 2 - abs(a.cy - b.cy)
+
+        if overlap_x <= 0 or overlap_y <= 0:
+            return   # not actually overlapping
+
+        # Resolve along the axis with the smaller penetration (minimum push)
+        if overlap_x < overlap_y:
+            push = overlap_x / 2
+            if a.cx < b.cx:
+                a.x -= push
+                b.x += push
+            else:
+                a.x += push
+                b.x -= push
+        else:
+            push = overlap_y / 2
+            if a.cy < b.cy:
+                a.y -= push
+                b.y += push
+            else:
+                a.y += push
+                b.y -= push
+
+        # Re-clamp both players to arena bounds
+        for p in (a, b):
+            p.x = self.clamp(p.x, 20, W - 20 - p.size)
+            p.y = self.clamp(p.y, 20, H - 20 - p.size)
 
     def _move_player(self, p: TNTPlayer, inp: InputState, W: int, H: int):
         if p.stun > 0:

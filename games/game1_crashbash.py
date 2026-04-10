@@ -33,6 +33,7 @@ BALL_PUSH     = 0.35        # fraction of player speed added to ball on deflect
 POWER_HIT_MULTIPLIER = 2.2  # speed multiplier when action button held on hit
 POWER_HIT_MAX = 14.0        # hard cap for power-hit speed
 BALL_COUNT    = 4
+ACTION_BUFFER = 18          # ticks the action press is remembered (≈0.3 s window)
 
 PLAYER_COLORS = ["#DC5050", "#5050DC", "#50C864", "#DCDC50"]
 
@@ -103,8 +104,9 @@ class CBPlayer:
             self.w = PLAYER_H
             self.h = PLAYER_W
 
-        self.score      = INITIAL_SCORE
-        self.eliminated = False
+        self.score          = INITIAL_SCORE
+        self.eliminated     = False
+        self.action_buffer  = 0   # ticks remaining where a buffered action press is active
 
     # axis-aligned bounding box corners
     @property
@@ -129,6 +131,7 @@ class CBPlayer:
             "side":       self.side,
             "score":      self.score,
             "eliminated": self.eliminated,
+            "action_buffered": self.action_buffer > 0,
         }
 
 
@@ -234,13 +237,21 @@ class CrashBashGame(BaseHeadlessGame):
             inp = inputs.get(p.player_id, InputState.neutral(p.player_id))
             self._move_player(p, inp, W, H)
 
-        # 2. Tick down per-ball cooldowns --------------------------------
+        # 2. Tick down per-ball cooldowns & per-player action buffers --
         for ball in self.balls:
             ball.hit_cooldowns = {
                 pid: t - 1
                 for pid, t in ball.hit_cooldowns.items()
                 if t > 1
             }
+
+        # Tick action buffers: refresh on new press, count down otherwise
+        for p in alive:
+            inp = inputs.get(p.player_id, InputState.neutral(p.player_id))
+            if inp.action:
+                p.action_buffer = ACTION_BUFFER   # re-arm / refresh
+            elif p.action_buffer > 0:
+                p.action_buffer -= 1
 
         # 3. Move balls & handle player deflections ----------------------
         for ball in self.balls:
@@ -358,8 +369,10 @@ class CrashBashGame(BaseHeadlessGame):
 
             ball.increase_speed()
 
-            # Power hit: action button held → big speed boost
-            if inp.action:
+            # Power hit: action pressed recently (buffered) → big speed boost.
+            # Consume the buffer so one press only triggers once.
+            if p.action_buffer > 0:
+                p.action_buffer = 0   # consume
                 spd = math.hypot(ball.dx, ball.dy)
                 boosted = min(spd * POWER_HIT_MULTIPLIER, POWER_HIT_MAX)
                 if spd > 0:
