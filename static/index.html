@@ -312,6 +312,54 @@ hr{border:none;border-top:1px solid var(--border);width:100%;margin:18px 0}
 </head>
 <body>
 
+<!-- ══════════════════════════════════════ INTRO AUDIO -->
+<audio id="introAudio" src="sounds/crash-intro.mp3" preload="auto"></audio>
+
+<!-- ══════════════════════════════════════ SPLASH SCREEN -->
+<div id="splashScreen" style="
+  position:fixed;inset:0;z-index:99999;
+  background:#0d0d14;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:18px;
+">
+  <div style="
+    font-size:3rem;font-weight:900;letter-spacing:-2px;
+    background:linear-gradient(135deg,#6c63ff,#ff6584);
+    -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+    margin-bottom:6px;
+  ">🎮 MultiGame</div>
+  <div style="color:#7878a0;font-size:.95rem;margin-bottom:10px;">
+    Play online — mix humans and bots however you like
+  </div>
+  <button id="splashBtn" style="
+    padding:16px 48px;
+    background:linear-gradient(135deg,#6c63ff,#ff6584);
+    border:none;border-radius:14px;
+    color:#fff;font-size:1.15rem;font-weight:800;
+    cursor:pointer;letter-spacing:.04em;
+    box-shadow:0 4px 32px rgba(108,99,255,.45);
+    transition:transform .15s,box-shadow .15s;
+  "
+  onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 8px 40px rgba(108,99,255,.6)'"
+  onmouseout="this.style.transform='';this.style.boxShadow='0 4px 32px rgba(108,99,255,.45)'"
+  >▶ &nbsp;Enter Game</button>
+  <div style="color:#3a3a55;font-size:.75rem;margin-top:4px;">Click to start with sound</div>
+</div>
+
+<script>
+document.getElementById("splashBtn").addEventListener("click", function(){
+  // Play the intro music on this user gesture — guaranteed to work in all browsers
+  var audio = document.getElementById("introAudio");
+  audio.play().catch(function(){});
+
+  // Fade out and remove splash
+  var splash = document.getElementById("splashScreen");
+  splash.style.transition = "opacity .4s";
+  splash.style.opacity = "0";
+  setTimeout(function(){ splash.remove(); }, 420);
+});
+</script>
+
 <!-- ══════════════════════════════════════ LOBBY -->
 <div id="lobbyScreen" class="screen active">
   <div class="logo">🎮 MultiGame</div>
