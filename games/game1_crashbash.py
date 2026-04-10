@@ -8,6 +8,13 @@
 #   • Reach 0 → eliminated.  Last player alive wins.
 #   • Players can deflect balls by moving into them (push influence preserved).
 #   • Ball speed starts slow and increases each time a player hits it.
+#   • Balls bounce off each other (elastic collision).
+#
+# Team mode (2v2):
+#   Pass config={"teams": {"A": [pid1, pid2], "B": [pid3, pid4]}}
+#   Teams share a combined score pool (2 × INITIAL_SCORE).
+#   A team is eliminated when their pool hits 0.
+#   The winner announcement names both teammates.
 #
 # Nothing in this file imports pygame.display / pygame.draw / pygame.Surface.
 # pygame.Rect is used only for AABB collision math (pure data).
@@ -34,6 +41,7 @@ POWER_HIT_MULTIPLIER = 2.2  # speed multiplier when action button held on hit
 POWER_HIT_MAX = 14.0        # hard cap for power-hit speed
 BALL_COUNT    = 4
 ACTION_BUFFER = 18          # ticks the action press is remembered (≈0.3 s window)
+BALL_BALL_COOLDOWN = 10     # ticks two balls ignore each other after colliding
 
 PLAYER_COLORS = ["#DC5050", "#5050DC", "#50C864", "#DCDC50"]
 
@@ -145,6 +153,7 @@ class CBBall:
         self.hit_count = 0
         self.current_speed = BALL_SPEED_START
         self.hit_cooldowns: dict = {}   # player_id → ticks remaining to ignore
+        self.ball_cooldowns: dict = {}  # ball_id   → ticks remaining (ball-ball collision)
         self._reset(arena_w, arena_h)
 
     def _reset(self, arena_w: int, arena_h: int):
@@ -164,6 +173,7 @@ class CBBall:
         """Reset ball position and speed after scoring"""
         self.hit_count = 0
         self.hit_cooldowns = {}
+        self.ball_cooldowns = {}
         self._reset(self._arena_w, self._arena_h)
 
     def increase_speed(self):
@@ -195,6 +205,36 @@ class CBBall:
         }
 
 
+# ── team (optional 2v2 mode) ──────────────────────────────────────────
+
+class CBTeam:
+    """
+    Represents one side in a 2v2 game.
+    Both teammates draw from a single shared score pool.
+    A team is eliminated when pool reaches 0.
+    """
+    def __init__(self, team_id: str, member_ids: list, color: str = None):
+        self.team_id    = team_id
+        self.member_ids = list(member_ids)
+        self.color      = color
+        self.score      = INITIAL_SCORE * len(member_ids)  # shared pool
+        self.eliminated = False
+
+    def deduct(self, amount: int = 1):
+        self.score = max(0, self.score - amount)
+        if self.score <= 0:
+            self.eliminated = True
+
+    def to_dict(self) -> dict:
+        return {
+            "team_id":    self.team_id,
+            "member_ids": self.member_ids,
+            "color":      self.color,
+            "score":      self.score,
+            "eliminated": self.eliminated,
+        }
+
+
 # ── main game ─────────────────────────────────────────────────────────
 
 class CrashBashGame(BaseHeadlessGame):
@@ -215,11 +255,31 @@ class CrashBashGame(BaseHeadlessGame):
             p = CBPlayer(pid, i + 1, W, H, color=color)
             self.players[pid] = p
 
+        # ── Team mode ──────────────────────────────────────────────────
+        # config["teams"] = {"A": [pid1, pid2], "B": [pid3, pid4]}
+        # If absent → free-for-all (each player is their own team).
+        raw_teams = self.config.get("teams")
+        self.teams: dict[str, CBTeam] | None = None
+        self.player_team: dict[str, str] = {}   # pid → team_id
+
+        if raw_teams and len(raw_teams) >= 2:
+            TEAM_COLORS = ["#E05050", "#5080E0", "#40C878", "#D4D440"]
+            self.teams = {}
+            for t_idx, (tid, members) in enumerate(raw_teams.items()):
+                tc = TEAM_COLORS[t_idx % len(TEAM_COLORS)]
+                team = CBTeam(tid, members, color=tc)
+                self.teams[tid] = team
+                for pid in members:
+                    self.player_team[pid] = tid
+                    if pid in self.players:
+                        self.players[pid].color = tc  # tint with team colour
+
         # 4 balls
         self.balls = [CBBall(W, H) for _ in range(BALL_COUNT)]
 
         # score-loss events this tick (for renderer "flash" effects)
         self.score_events: list[dict] = []
+        self._winner_display: str | None = None  # human-readable "Player A & Player B win!"
 
     # ── tick ──────────────────────────────────────────────────────────
 
@@ -237,11 +297,16 @@ class CrashBashGame(BaseHeadlessGame):
             inp = inputs.get(p.player_id, InputState.neutral(p.player_id))
             self._move_player(p, inp, W, H)
 
-        # 2. Tick down per-ball cooldowns & per-player action buffers --
+        # 2. Tick down per-ball cooldowns & per-player action buffers ----
         for ball in self.balls:
             ball.hit_cooldowns = {
                 pid: t - 1
                 for pid, t in ball.hit_cooldowns.items()
+                if t > 1
+            }
+            ball.ball_cooldowns = {
+                bid: t - 1
+                for bid, t in ball.ball_cooldowns.items()
                 if t > 1
             }
 
@@ -257,31 +322,71 @@ class CrashBashGame(BaseHeadlessGame):
         for ball in self.balls:
             self._move_ball(ball, alive, inputs, W, H)
 
+        # 3b. Ball-ball elastic collisions --------------------------------
+        for i in range(len(self.balls)):
+            for j in range(i + 1, len(self.balls)):
+                self._collide_balls(self.balls[i], self.balls[j])
+
         # 4. Goal scoring ------------------------------------------------
         for ball in self.balls:
             for p in alive:
                 gx, gy, gw, gh = _goal_rect(p.side, W, H)
-                # use ball centre for scoring
                 if (gx <= ball.cx <= gx + gw and
                         gy <= ball.cy <= gy + gh):
-                    p.score -= 1
-                    self.score_events.append({
-                        "player_id": p.player_id,
-                        "side":      p.side,
-                        "score":     p.score,
-                    })
-                    ball.reset()  # Reset speed to starting value
 
-                    if p.score <= 0:
-                        p.score      = 0
-                        p.eliminated = True
+                    if self.teams:
+                        # ── Team mode: deduct from shared pool ──────────
+                        tid  = self.player_team.get(p.player_id)
+                        team = self.teams.get(tid) if tid else None
+                        if team and not team.eliminated:
+                            team.deduct(1)
+                            self.score_events.append({
+                                "player_id": p.player_id,
+                                "team_id":   tid,
+                                "side":      p.side,
+                                "team_score": team.score,
+                            })
+                            # Eliminate ALL members when team pool hits 0
+                            if team.eliminated:
+                                for mid in team.member_ids:
+                                    mp = self.players.get(mid)
+                                    if mp:
+                                        mp.score      = 0
+                                        mp.eliminated = True
+                    else:
+                        # ── Free-for-all: deduct individual score ────────
+                        p.score -= 1
+                        self.score_events.append({
+                            "player_id": p.player_id,
+                            "side":      p.side,
+                            "score":     p.score,
+                        })
+                        if p.score <= 0:
+                            p.score      = 0
+                            p.eliminated = True
+
+                    ball.reset()
                     break   # one scorer per ball per tick
 
         # 5. Win check ---------------------------------------------------
-        alive_now = [p for p in self.players.values() if not p.eliminated]
-        if len(alive_now) <= 1:
-            winner = alive_now[0].player_id if alive_now else None
-            self._end_game(winner=winner)
+        if self.teams:
+            alive_teams = [t for t in self.teams.values() if not t.eliminated]
+            if len(alive_teams) <= 1:
+                winning_team = alive_teams[0] if alive_teams else None
+                if winning_team:
+                    # Build announcement string: "Alice & Bob WIN!"
+                    names = " & ".join(winning_team.member_ids)
+                    self._winner_display = f"{names} WIN!"
+                    self._end_game(winner=winning_team.team_id)
+                else:
+                    self._winner_display = "Draw!"
+                    self._end_game(winner=None)
+        else:
+            alive_now = [p for p in self.players.values() if not p.eliminated]
+            if len(alive_now) <= 1:
+                winner = alive_now[0].player_id if alive_now else None
+                self._winner_display = f"{winner} WINS!" if winner else "Draw!"
+                self._end_game(winner=winner)
 
         return self.get_state()
 
@@ -383,6 +488,53 @@ class CrashBashGame(BaseHeadlessGame):
             ball.hit_cooldowns[p.player_id] = HIT_COOLDOWN
             break
 
+    # ── ball-ball elastic collision ────────────────────────────────────
+
+    def _collide_balls(self, a: CBBall, b: CBBall):
+        """
+        Elastic 1D collision between two same-mass square balls.
+        Uses circle approximation (radius = size/2) for distance check,
+        then swaps velocity components along the collision normal.
+        A per-pair cooldown prevents double-counting the same collision.
+        """
+        if a.ball_cooldowns.get(b.ball_id, 0) > 0:
+            return
+
+        r = (a.size + b.size) / 2   # sum of radii
+        dx = b.cx - a.cx
+        dy = b.cy - a.cy
+        dist = math.hypot(dx, dy)
+        if dist >= r or dist == 0:
+            return
+
+        # Normalised collision axis
+        nx, ny = dx / dist, dy / dist
+
+        # Relative velocity along normal
+        rel_vn = (b.dx - a.dx) * nx + (b.dy - a.dy) * ny
+        if rel_vn > 0:
+            return   # already separating – skip (avoids sticky overlap)
+
+        # Equal-mass elastic: swap the normal components
+        a_vn = a.dx * nx + a.dy * ny
+        b_vn = b.dx * nx + b.dy * ny
+        # After elastic collision, normal velocities exchange
+        a.dx += (b_vn - a_vn) * nx
+        a.dy += (b_vn - a_vn) * ny
+        b.dx += (a_vn - b_vn) * nx
+        b.dy += (a_vn - b_vn) * ny
+
+        # Push apart so they're no longer overlapping
+        overlap = r - dist
+        a.x -= nx * overlap / 2
+        a.y -= ny * overlap / 2
+        b.x += nx * overlap / 2
+        b.y += ny * overlap / 2
+
+        # Cooldown so we don't process this pair again next tick
+        a.ball_cooldowns[b.ball_id] = BALL_BALL_COOLDOWN
+        b.ball_cooldowns[a.ball_id] = BALL_BALL_COOLDOWN
+
     # ── state snapshot ────────────────────────────────────────────────
 
     def get_state(self) -> dict:
@@ -400,18 +552,22 @@ class CrashBashGame(BaseHeadlessGame):
         }
 
         return {
-            "game_id":       self.game_id,
-            "game_type":     "crash_bash",
-            "tick":          self.tick,
-            "arena_w":       W,
-            "arena_h":       H,
-            "goal_size":     g,
-            "initial_score": INITIAL_SCORE,
-            "players":       {pid: p.to_dict() for pid, p in self.players.items()},
-            "balls":         [b.to_dict() for b in self.balls],
-            "goals":         goals,
-            "score_events":  self.score_events,
-            "game_over":     self._over,
-            "winner":        self._winner,
-            "elapsed":       round(self.elapsed(), 2),
+            "game_id":        self.game_id,
+            "game_type":      "crash_bash",
+            "tick":           self.tick,
+            "arena_w":        W,
+            "arena_h":        H,
+            "goal_size":      g,
+            "initial_score":  INITIAL_SCORE,
+            "players":        {pid: p.to_dict() for pid, p in self.players.items()},
+            "balls":          [b.to_dict() for b in self.balls],
+            "goals":          goals,
+            "score_events":   self.score_events,
+            "game_over":      self._over,
+            "winner":         self._winner,
+            "winner_display": self._winner_display,   # "Alice & Bob WIN!" or "PlayerX WINS!"
+            "team_mode":      self.teams is not None,
+            "teams":          {tid: t.to_dict() for tid, t in self.teams.items()}
+                              if self.teams else None,
+            "elapsed":        round(self.elapsed(), 2),
         }
