@@ -120,10 +120,19 @@ input[type=text]:focus,select:focus{border-color:var(--acc)}
 @keyframes pulse{from{opacity:1}to{opacity:.35}}
 
 /* game screen */
-#gameScreen{padding:0;background:#0a0a10}
-#gameCanvas{display:block;max-width:100vw;max-height:calc(100vh - 110px);touch-action:none}
+#gameScreen{padding:0;background:#0a0a10;justify-content:flex-start}
+/* On mobile the game screen should fill the full viewport height */
+@media (max-width:600px){
+  #gameScreen{min-height:100dvh;min-height:100vh}
+}
+#gameCanvas{display:block;max-width:100vw;touch-action:none}
 .game-hud{width:100%;max-width:800px;display:flex;align-items:center;
           justify-content:space-between;padding:7px 12px;background:var(--surf)}
+@media (max-width:480px){
+  .game-hud{padding:5px 8px}
+  .hud-player{font-size:.75rem}
+  .hud-players{gap:7px}
+}
 .hud-players{display:flex;gap:10px;flex-wrap:wrap}
 .hud-player{display:flex;align-items:center;gap:5px;font-size:.82rem}
 .hud-color{width:9px;height:9px;border-radius:2px}
@@ -178,7 +187,25 @@ body.fs-open{overflow:hidden;position:fixed;width:100%}
 /* mobile controls */
 .mobile-controls{width:100%;max-width:800px;display:flex;
                  justify-content:space-between;align-items:center;
-                 padding:8px 16px;gap:12px;user-select:none}
+                 padding:8px 16px;gap:12px;user-select:none;flex-shrink:0}
+
+/* ── On small phones: scale up controls so they're easier to tap ── */
+@media (max-width:480px){
+  .mobile-controls{padding:6px 14px;gap:10px}
+  .joystick-zone{width:172px;height:172px}
+  .joystick-knob{width:68px;height:68px}
+  .dpad{width:172px;height:172px}
+  .dpad-btn{width:56px;height:56px;font-size:1.5rem}
+  .action-btn{width:96px;height:96px;font-size:2rem}
+}
+/* ── Very small phones (≤360px) ── */
+@media (max-width:360px){
+  .joystick-zone{width:152px;height:152px}
+  .joystick-knob{width:60px;height:60px}
+  .dpad{width:152px;height:152px}
+  .dpad-btn{width:50px;height:50px;font-size:1.3rem}
+  .action-btn{width:86px;height:86px;font-size:1.8rem}
+}
 
 /* ── joystick ── */
 .joystick-zone{
@@ -1553,6 +1580,10 @@ function latchAction(){
 
 document.getElementById("mobileControls").style.display =
   window.matchMedia("(pointer:coarse)").matches ? "flex" : "none";
+// Re-measure after controls appear so canvas height is correct
+if(window.matchMedia("(pointer:coarse)").matches){
+  requestAnimationFrame(() => { if(S.lastState) renderGame(S.lastState); });
+}
 
 // ═══════════════════════════════════════════════════════════ CANVAS
 const canvas = document.getElementById("gameCanvas");
@@ -1565,9 +1596,12 @@ function resizeCanvas(W, H){
   const hudH  = document.querySelector(".game-hud")?.offsetHeight || 44;
   const mobEl = document.getElementById("mobileControls");
   const mobH  = (mobEl && mobEl.style.display !== "none") ? (mobEl.offsetHeight || 0) : 0;
+  // Always measure real heights so mobile gets maximum canvas space
+  const usedH = hudH + mobH;
+  const pad   = isFS ? 0 : 8;   // tiny breathing room in non-FS mode
   const mxW   = isFS ? vvW  : Math.min(vvW, 800);
-  const mxH   = isFS ? (vvH - hudH - mobH) : (vvH - 110);
-  const sc    = Math.min(mxW / W, mxH / H);
+  const mxH   = vvH - usedH - pad;
+  const sc    = Math.min(mxW / W, Math.max(mxH, 80) / H);
   canvas.style.width  = Math.floor(W * sc) + "px";
   canvas.style.height = Math.floor(H * sc) + "px";
   canvas.width  = W;
