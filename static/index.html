@@ -457,6 +457,23 @@ document.getElementById("splashBtn").addEventListener("click", function(){
       </select>
     </div>
 
+    <div class="section" id="teamModeSection" style="display:none">
+      <label>Team mode (2v2)</label>
+      <div style="display:flex;align-items:center;gap:12px;margin-top:6px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;color:var(--text);font-size:.9rem;text-transform:none;letter-spacing:0">
+          <input type="checkbox" id="teamModeCheck"
+                 style="width:18px;height:18px;accent-color:var(--acc);cursor:pointer">
+          Enable 2v2 — teammates share adjacent sides, no friendly fire
+        </label>
+      </div>
+      <div id="teamPreview" style="display:none;margin-top:10px;font-size:.8rem;color:var(--muted);
+           background:var(--surf);border:1.5px solid var(--border);border-radius:8px;padding:10px 12px;line-height:1.8">
+        <span style="color:#E05050">🔴 Team A</span>: slots 1 &amp; 3 → Top + Left sides<br>
+        <span style="color:#5080E0">🔵 Team B</span>: slots 2 &amp; 4 → Bottom + Right sides<br>
+        <span style="opacity:.7">Teammates are on adjacent corners — no direct opposing goal</span>
+      </div>
+    </div>
+
     <div class="error-msg" id="createError"></div>
     <button class="btn btn-primary" onclick="createGame()" id="createBtn">Create &amp; Play</button>
   </div>
@@ -754,8 +771,19 @@ function setPlayerCount(n){
     if(i < n)   return "bot";           // fill up to n with bots
     return "empty";                     // rest unused
   });
-  renderSlots(); updateSlotSummary();
-  _syncPickerBtn(n);
+  renderSlots(); updateSlotSummary(); _syncPickerBtn(n);
+  _updateTeamModeVisibility();
+}
+
+function _updateTeamModeVisibility(){
+  const active = slotTypes.filter(t=>t!=="empty").length;
+  const sec    = document.getElementById("teamModeSection");
+  const prev   = document.getElementById("teamPreview");
+  const chk    = document.getElementById("teamModeCheck");
+  if(sec) sec.style.display = (active === 4) ? "" : "none";
+  // Hide preview if we switched away from 4-player
+  if(active !== 4 && chk) chk.checked = false;
+  if(prev) prev.style.display = (chk && chk.checked) ? "" : "none";
 }
 
 function _syncPickerBtn(n){
@@ -789,6 +817,7 @@ function cycleSlot(i){
   const active = slotTypes.filter(t=>t!=="empty").length;
   if(active >= 2 && active <= 4) _syncPickerBtn(active);
   else document.querySelectorAll(".pcp-btn").forEach(b=>b.classList.remove("active"));
+  _updateTeamModeVisibility();
 }
 
 function updateSlotSummary(){
@@ -874,6 +903,7 @@ async function createGame(){
   const humans     = slotTypes.filter(t=>t==="human").length;
   const bots       = slotTypes.filter(t=>t==="bot").length;
   const total      = humans + bots;
+  const teamMode   = total === 4 && !!(document.getElementById("teamModeCheck")?.checked);
 
   const body = {
     game_type:      S.gameType,
@@ -882,6 +912,7 @@ async function createGame(){
     total_slots:    total,
     bot_slots:      bots,
     bot_difficulty: document.getElementById("botDiff").value,
+    team_mode:      teamMode,
     player_id:      S.playerId,
   };
 
@@ -992,6 +1023,9 @@ function renderWaitSlots(slots){
   const c = document.getElementById("waitSlots");
   if(!slots.length){ c.innerHTML = '<div class="notice">Connecting…</div>'; return; }
 
+  // Check if this is a team-mode room
+  const isTeamMode = slots.some(s => s.team);
+
   // Show a "your kit" reminder at the top when there are multiple players
   const myKit = S.selectedColor || COLOR_PALETTE[0];
   const kitBanner = slots.length > 1 ? `
@@ -1005,7 +1039,23 @@ function renderWaitSlots(slots){
       <span style="margin-left:auto;font-size:.72rem;opacity:.7">(opponents see their own kit)</span>
     </div>` : "";
 
-  c.innerHTML = kitBanner + slots.map(s=>{
+  // Team mode header showing team layout
+  const TEAM_COLORS = {A:"#E05050", B:"#5080E0"};
+  const teamHeader = isTeamMode ? `
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <div style="flex:1;background:rgba(224,80,80,.12);border:1.5px solid #E05050;
+                  border-radius:8px;padding:8px 10px;font-size:.8rem;text-align:center">
+        <span style="color:#E05050;font-weight:700">🔴 Team A</span><br>
+        <span style="color:var(--muted);font-size:.72rem">Top + Left</span>
+      </div>
+      <div style="flex:1;background:rgba(80,128,224,.12);border:1.5px solid #5080E0;
+                  border-radius:8px;padding:8px 10px;font-size:.8rem;text-align:center">
+        <span style="color:#5080E0;font-weight:700">🔵 Team B</span><br>
+        <span style="color:var(--muted);font-size:.72rem">Bottom + Right</span>
+      </div>
+    </div>` : "";
+
+  c.innerHTML = kitBanner + teamHeader + slots.map(s=>{
     const isYou = s.pid === S.playerId;
     let cls = "wait-slot";
     if(s.is_bot)         cls += " bot-slot";
@@ -1017,10 +1067,18 @@ function renderWaitSlots(slots){
     const badge = s.is_bot ? "🤖 Bot"
                 : s.filled ? (s.ready ? "✅ Ready" : "⏳ Waiting")
                 : "";
+
+    // Team badge
+    let teamBadge = "";
+    if(isTeamMode && s.team){
+      const tc = TEAM_COLORS[s.team] || "#888";
+      teamBadge = `<span style="font-size:.72rem;font-weight:700;color:${tc};margin-left:4px">${s.team==="A"?"🔴":"🔵"} ${s.team}</span>`;
+    }
+
     const dotStyle = isYou ? `style="background:${myKit}"` : "";
     return `<div class="${cls}">
       <div class="wait-dot" ${dotStyle}></div>
-      <span class="wait-name">${icon} ${name}</span>
+      <span class="wait-name">${icon} ${name}${teamBadge}</span>
       <span class="wait-status">${badge}</span>
     </div>`;
   }).join("");
@@ -1310,31 +1368,34 @@ function _playCortexLaughTwice(){
   });
 }
 
-function _speakGameOver(winPlayer, isLocalPlayer){
+function _speakGameOver(state){
+  const winP = state.winner && state.players && state.players[state.winner];
   setTimeout(() => {
-    if(!winPlayer){
-      _playCortexLaughTwice();
+    // ── Team mode: use winner_display which contains both teammate names ──
+    if(state.team_mode && state.winner_display){
+      const phrase = state.winner_display.replace("WIN!", "win!").replace("WINS!", "wins!");
+      if(!_cdVoice._synth){ _playCortexLaughTwice(); return; }
+      _cdVoice._synth.cancel();
+      const u = new SpeechSynthesisUtterance(phrase);
+      if(_cdVoice._voice) u.voice = _cdVoice._voice;
+      u.pitch = 0.5; u.rate = 0.82; u.volume = 1; u.lang = "en-US";
+      u.onend = () => _playCortexLaughTwice();
+      _cdVoice._synth.speak(u);
       return;
     }
-    const name = winPlayer.is_bot
-      ? `Bot ${winPlayer.number}`
-      : (S.pidToName[winPlayer.player_id] || winPlayer.name || `Player ${winPlayer.number}`);
 
-    // Build the announcement phrase
-    const phrase = isLocalPlayer ? `${name} wins!` : `${name} wins!`;
-
-    if(!_cdVoice._synth){
-      _playCortexLaughTwice();
-      return;
-    }
+    // ── Free-for-all: single winner ──
+    if(!winP){ _playCortexLaughTwice(); return; }
+    const name = winP.is_bot
+      ? `Bot ${winP.number}`
+      : (S.pidToName[winP.player_id] || winP.name || `Player ${winP.number}`);
+    const phrase = `${name} wins!`;
+    if(!_cdVoice._synth){ _playCortexLaughTwice(); return; }
     _cdVoice._synth.cancel();
     const u = new SpeechSynthesisUtterance(phrase);
     if(_cdVoice._voice) u.voice = _cdVoice._voice;
-    u.pitch  = 0.5;
-    u.rate   = 0.82;
-    u.volume = 1;
-    u.lang   = "en-US";
-    u.onend  = () => _playCortexLaughTwice();
+    u.pitch = 0.5; u.rate = 0.82; u.volume = 1; u.lang = "en-US";
+    u.onend = () => _playCortexLaughTwice();
     _cdVoice._synth.speak(u);
   }, 400);
 }
@@ -1771,6 +1832,26 @@ function renderCrashBash(s){
   ctx.fillStyle="#0a0a14"; ctx.fillRect(0,0,W,H);
   ctx.strokeStyle="#2a2a3d"; ctx.lineWidth=8; ctx.strokeRect(4,4,W-8,H-8);
 
+  // Team mode: draw a slim coloured stripe along each team's two wall edges
+  if(s.team_mode && s.teams){
+    const TEAM_COLORS = {A:"#E05050", B:"#5080E0"};
+    for(const [tid, team] of Object.entries(s.teams)){
+      const tc = TEAM_COLORS[tid] || "#888";
+      ctx.save();
+      ctx.globalAlpha = 0.18;
+      ctx.fillStyle   = tc;
+      const stripe = 4;
+      if(tid === "A"){
+        ctx.fillRect(0, 0, W, stripe);        // top wall stripe
+        ctx.fillRect(0, 0, stripe, H);        // left wall stripe
+      } else {
+        ctx.fillRect(0, H-stripe, W, stripe); // bottom wall stripe
+        ctx.fillRect(W-stripe, 0, stripe, H); // right wall stripe
+      }
+      ctx.restore();
+    }
+  }
+
   for(const[pid,g] of Object.entries(s.goals||{})){
     const[gx,gy,gw,gh]=g.rect;
     ctx.fillStyle=g.color+"44"; ctx.fillRect(gx,gy,gw,gh);
@@ -1789,8 +1870,21 @@ function renderCrashBash(s){
     ctx.globalAlpha=p.eliminated?0.3:1;
     drawPlayerLabel(p);
     ctx.fillStyle="#fff"; ctx.font="11px sans-serif";
-    ctx.textAlign="center";
-    ctx.fillText(p.eliminated?"OUT":p.score, p.x+pw/2, p.y+ph+11);
+    ctx.textAlign="center"; ctx.textBaseline="middle";
+    const scoreVal = p.eliminated ? "OUT" : p.score;
+    const gap = 10;
+    if(p.side === "top"){
+      ctx.fillText(scoreVal, p.x+pw/2, p.y - gap);
+    } else if(p.side === "bottom"){
+      ctx.fillText(scoreVal, p.x+pw/2, p.y + ph + gap);
+    } else if(p.side === "left"){
+      ctx.textAlign = "right";
+      ctx.fillText(scoreVal, p.x - gap, p.y + ph/2);
+    } else {
+      ctx.textAlign = "left";
+      ctx.fillText(scoreVal, p.x + pw + gap, p.y + ph/2);
+    }
+    ctx.textAlign="center"; ctx.textBaseline="alphabetic";
     ctx.globalAlpha=1;
   }
 
@@ -1866,6 +1960,20 @@ function renderTntBattle(s){
     if(pid===S.playerId){
       ctx.strokeStyle="#fff"; ctx.lineWidth=2.5; rr(p.x,p.y,p.size,p.size,6); ctx.stroke();
     }
+    // Team mode: draw a glowing aura around teammates (not self, not enemies)
+    if(s.team_mode && s.player_team && pid !== S.playerId){
+      const myTeam   = s.player_team[S.playerId];
+      const theirTeam = s.player_team[pid];
+      if(myTeam && myTeam === theirTeam && !p.eliminated){
+        ctx.save();
+        ctx.strokeStyle = "#50ff90";
+        ctx.lineWidth   = 2.5;
+        ctx.globalAlpha = 0.55;
+        rr(p.x-3, p.y-3, p.size+6, p.size+6, 9);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
     if(!p.eliminated){
       const hpW=p.size*(p.hp/p.max_hp);
       const hpc=p.hp>60?"#3db83d":p.hp>25?"#d4b43c":"#d43c3c";
@@ -1891,43 +1999,107 @@ function renderTntBattle(s){
 }
 
 function updateHud(s){
-  const ps = applyPersonalKit(s);   // use kit-resolved colors in HUD too
-  document.getElementById("hudPlayers").innerHTML =
-    Object.values(ps.players).map(p=>{
-      const val  = s.game_type==="crash_bash" ? p.score : p.hp+" HP";
-      const elim = p.eliminated?" hud-elim":"";
-      const bot  = p.is_bot===true ? `<span class="hud-bot">BOT</span>` : "";
-      const name = playerName(p);
-      return `<div class="hud-player${elim}">
-        <div class="hud-color" style="background:${p.color}"></div>
-        <span>${name}${bot}</span>
-        <span class="hud-score">${p.eliminated?"OUT":val}</span>
+  const ps = applyPersonalKit(s);
+
+  if(s.team_mode && s.teams){
+    // Team mode HUD: group players by team with a coloured bracket
+    const TEAM_COLORS = {A:"#E05050", B:"#5080E0"};
+    let html = "";
+    for(const [tid, team] of Object.entries(s.teams)){
+      const tc = TEAM_COLORS[tid] || team.color || "#888";
+      const label = tid === "A" ? "🔴" : "🔵";
+      // Shared score for crash_bash (team pool) or HP sum for tnt
+      let teamScore = "";
+      if(s.game_type === "crash_bash" && team.score !== undefined){
+        teamScore = `<span class="hud-score" style="color:${tc}">${team.score}pts</span>`;
+      }
+      const memberHtml = (team.member_ids || []).map(pid => {
+        const p    = ps.players[pid]; if(!p) return "";
+        const val  = s.game_type === "crash_bash" ? p.score : p.hp + " HP";
+        const elim = p.eliminated ? " hud-elim" : "";
+        const bot  = p.is_bot ? `<span class="hud-bot">BOT</span>` : "";
+        const name = playerName(p);
+        return `<div class="hud-player${elim}">
+          <div class="hud-color" style="background:${p.color}"></div>
+          <span>${name}${bot}</span>
+          <span class="hud-score">${p.eliminated ? "OUT" : val}</span>
+        </div>`;
+      }).join("");
+      html += `<div style="display:flex;align-items:center;gap:4px;
+                    border-left:3px solid ${tc};padding-left:6px;margin-right:6px">
+        <span style="font-size:.75rem;color:${tc};font-weight:800;margin-right:2px">${label}</span>
+        ${memberHtml}${teamScore}
       </div>`;
-    }).join("");
+    }
+    document.getElementById("hudPlayers").innerHTML = html;
+  } else {
+    document.getElementById("hudPlayers").innerHTML =
+      Object.values(ps.players).map(p=>{
+        const val  = s.game_type==="crash_bash" ? p.score : p.hp+" HP";
+        const elim = p.eliminated?" hud-elim":"";
+        const bot  = p.is_bot===true ? `<span class="hud-bot">BOT</span>` : "";
+        const name = playerName(p);
+        return `<div class="hud-player${elim}">
+          <div class="hud-color" style="background:${p.color}"></div>
+          <span>${name}${bot}</span>
+          <span class="hud-score">${p.eliminated?"OUT":val}</span>
+        </div>`;
+      }).join("");
+  }
 }
 
 function showGameOver(s){
-  const ps = applyPersonalKit(s);   // kit colors in scoreboard too
-  const winP  = s.winner && ps.players[s.winner];
+  const ps = applyPersonalKit(s);
+  const winP   = s.winner && ps.players[s.winner];
   const isHost = S.playerId === S.hostId;
 
-  document.getElementById("winnerName").textContent =
-    winP ? `🎉 ${playerName(winP)} wins!` : "Draw";
+  // Winner announcement — use server-provided winner_display if present
+  let winnerText;
+  if(s.winner_display){
+    winnerText = `🎉 ${s.winner_display}`;
+  } else if(winP){
+    winnerText = `🎉 ${playerName(winP)} wins!`;
+  } else {
+    winnerText = "Draw";
+  }
+  document.getElementById("winnerName").textContent = winnerText;
 
-  const rows = Object.values(ps.players)
-    .sort((a,b)=> s.game_type==="crash_bash" ? b.score-a.score : b.hp-a.hp)
-    .map((p,i)=>{
-      const medal=["🥇","🥈","🥉",""][i]||"";
-      const val  = s.game_type==="crash_bash" ? `${p.score} pts` : `${p.hp} HP`;
-      const you  = p.player_id===S.playerId?" (you)":"";
-      const bot  = p.is_bot?" 🤖":"";
-      return `<tr>
-        <td>${medal}</td>
-        <td style="color:${p.color}">${playerName(p)}${bot}${you}</td>
-        <td style="text-align:right;font-weight:700">${val}</td>
-      <tr>`;
-    }).join("");
-
+  // Score table — in team mode show team grouping
+  let rows = "";
+  if(s.team_mode && s.teams){
+    const TEAM_COLORS = {A:"#E05050", B:"#5080E0"};
+    for(const [tid, team] of Object.entries(s.teams)){
+      const tc    = TEAM_COLORS[tid] || team.color || "#888";
+      const label = tid === "A" ? "🔴" : "🔵";
+      rows += `<tr><td colspan="3" style="font-weight:700;color:${tc};padding-top:8px">${label} Team ${tid}</td></tr>`;
+      for(const pid of (team.member_ids || [])){
+        const p   = ps.players[pid];
+        if(!p) continue;
+        const val = s.game_type === "crash_bash" ? `${p.score} pts` : `${p.hp} HP`;
+        const you = pid === S.playerId ? " (you)" : "";
+        const bot = p.is_bot ? " 🤖" : "";
+        rows += `<tr>
+          <td style="color:${p.color}">●</td>
+          <td style="color:${p.color}">${playerName(p)}${bot}${you}</td>
+          <td style="text-align:right;font-weight:700">${val}</td>
+        </tr>`;
+      }
+    }
+  } else {
+    rows = Object.values(ps.players)
+      .sort((a,b)=> s.game_type==="crash_bash" ? b.score-a.score : b.hp-a.hp)
+      .map((p,i)=>{
+        const medal=["\uD83E\uDD47","\uD83E\uDD48","\uD83E\uDD49",""][i]||"";
+        const val  = s.game_type==="crash_bash" ? `${p.score} pts` : `${p.hp} HP`;
+        const you  = p.player_id===S.playerId?" (you)":"";
+        const bot  = p.is_bot?" 🤖":"";
+        return `<tr>
+          <td>${medal}</td>
+          <td style="color:${p.color}">${playerName(p)}${bot}${you}</td>
+          <td style="text-align:right;font-weight:700">${val}</td>
+        </tr>`;
+      }).join("");
+  }
   document.getElementById("scoreTable").innerHTML = rows;
 
   const actions = document.getElementById("rematchActions");
@@ -1941,11 +2113,11 @@ function showGameOver(s){
       <button class="btn btn-secondary" onclick="goLobby()">Leave</button>`;
   } else {
     actions.innerHTML = `
-      <button class="btn btn-primary"   onclick="goLobby()">Lobby</button>`;
+      <button class="btn btn-primary" onclick="goLobby()">Lobby</button>`;
   }
 
   document.getElementById("gameOverlay").classList.add("show");
-  _speakGameOver(winP, s.winner === S.playerId);
+  _speakGameOver(s);
 }
 
 async function hostRematch(){
@@ -1995,6 +2167,16 @@ function leaveGame(){
 }
 
 initSlots();
+// Wire up team-mode checkbox so the preview panel shows/hides live
+(function(){
+  const chk  = document.getElementById("teamModeCheck");
+  const prev = document.getElementById("teamPreview");
+  if(chk && prev){
+    chk.addEventListener("change", ()=>{
+      prev.style.display = chk.checked ? "" : "none";
+    });
+  }
+})();
 const _savedColor = localStorage.getItem("playerColor") || COLOR_PALETTE[0];
 S.selectedColor = _savedColor;
 initColorPicker("createColorSwatches", "playerColor");

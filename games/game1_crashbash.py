@@ -210,27 +210,20 @@ class CBBall:
 class CBTeam:
     """
     Represents one side in a 2v2 game.
-    Both teammates draw from a single shared score pool.
-    A team is eliminated when pool reaches 0.
+    Each teammate has their OWN independent score (no shared pool).
+    A team is eliminated only when ALL its members reach 0.
     """
     def __init__(self, team_id: str, member_ids: list, color: str = None):
         self.team_id    = team_id
         self.member_ids = list(member_ids)
         self.color      = color
-        self.score      = INITIAL_SCORE * len(member_ids)  # shared pool
         self.eliminated = False
-
-    def deduct(self, amount: int = 1):
-        self.score = max(0, self.score - amount)
-        if self.score <= 0:
-            self.eliminated = True
 
     def to_dict(self) -> dict:
         return {
             "team_id":    self.team_id,
             "member_ids": self.member_ids,
             "color":      self.color,
-            "score":      self.score,
             "eliminated": self.eliminated,
         }
 
@@ -247,20 +240,54 @@ class CrashBashGame(BaseHeadlessGame):
         super().__init__(game_id, player_ids, config)
         W, H = self.ARENA_W, self.ARENA_H
 
-        # Build players (1-indexed numbers, up to 4)
-        self.players: dict[str, CBPlayer] = {}
-        colors = self.config.get("colors", {})
-        for i, pid in enumerate(player_ids[:4]):
-            color = colors.get(pid) or PLAYER_COLORS[i]
-            p = CBPlayer(pid, i + 1, W, H, color=color)
-            self.players[pid] = p
-
-        # ── Team mode ──────────────────────────────────────────────────
+        # ── Team mode pre-pass ─────────────────────────────────────────
         # config["teams"] = {"A": [pid1, pid2], "B": [pid3, pid4]}
-        # If absent → free-for-all (each player is their own team).
+        # In 2v2 we assign player numbers so teammates sit on ADJACENT sides
+        # (top+left vs bottom+right), NOT opposite sides.  Opposite sides
+        # (top vs bottom, left vs right) face each other directly, which means
+        # every ball that gets past one teammate flies straight into their
+        # partner's goal — making friendly-fire goals almost certain.
+        #
+        # Adjacent-side layout:
+        #   Team A (first dict entry)  → slot 1 (top)  + slot 3 (left)
+        #   Team B (second dict entry) → slot 2 (bottom) + slot 4 (right)
+        #
+        # Top and left share the same corner; bottom and right share the
+        # opposite corner.  Their goals are perpendicular, so a ball that
+        # slips past one teammate mostly misses the other's goal entirely.
+
         raw_teams = self.config.get("teams")
         self.teams: dict[str, CBTeam] | None = None
-        self.player_team: dict[str, str] = {}   # pid → team_id
+        self.player_team: dict[str, str] = {}
+
+        pid_to_number: dict[str, int] = {}
+
+        if raw_teams and len(raw_teams) == 2:
+            team_keys  = list(raw_teams.keys())
+            # Team A → adjacent sides top(1) + left(3)
+            # Team B → adjacent sides bottom(2) + right(4)
+            side_slots = {team_keys[0]: [1, 3], team_keys[1]: [2, 4]}
+            for tid, members in raw_teams.items():
+                for i, pid in enumerate(members[:2]):
+                    pid_to_number[pid] = side_slots[tid][i]
+            # Any additional player_ids not in a team get remaining slots
+            used = set(pid_to_number.values())
+            spare = [s for s in range(1, 5) if s not in used]
+            for pid in player_ids[:4]:
+                if pid not in pid_to_number:
+                    pid_to_number[pid] = spare.pop(0) if spare else 1
+        else:
+            for i, pid in enumerate(player_ids[:4]):
+                pid_to_number[pid] = i + 1
+
+        # Build players using the computed number assignments
+        self.players: dict[str, CBPlayer] = {}
+        colors = self.config.get("colors", {})
+        for pid in player_ids[:4]:
+            number = pid_to_number[pid]
+            color  = colors.get(pid) or PLAYER_COLORS[number - 1]
+            p = CBPlayer(pid, number, W, H, color=color)
+            self.players[pid] = p
 
         if raw_teams and len(raw_teams) >= 2:
             TEAM_COLORS = ["#E05050", "#5080E0", "#40C878", "#D4D440"]
@@ -335,24 +362,25 @@ class CrashBashGame(BaseHeadlessGame):
                         gy <= ball.cy <= gy + gh):
 
                     if self.teams:
-                        # ── Team mode: deduct from shared pool ──────────
+                        # ── Team mode: deduct from THIS player's own score ──
                         tid  = self.player_team.get(p.player_id)
                         team = self.teams.get(tid) if tid else None
                         if team and not team.eliminated:
-                            team.deduct(1)
+                            p.score -= 1
                             self.score_events.append({
                                 "player_id": p.player_id,
                                 "team_id":   tid,
                                 "side":      p.side,
-                                "team_score": team.score,
+                                "score":     p.score,
                             })
-                            # Eliminate ALL members when team pool hits 0
-                            if team.eliminated:
-                                for mid in team.member_ids:
-                                    mp = self.players.get(mid)
-                                    if mp:
-                                        mp.score      = 0
-                                        mp.eliminated = True
+                            if p.score <= 0:
+                                p.score      = 0
+                                p.eliminated = True
+                            # Eliminate the team only when ALL members are out
+                            if all(self.players[mid].eliminated
+                                   for mid in team.member_ids
+                                   if mid in self.players):
+                                team.eliminated = True
                     else:
                         # ── Free-for-all: deduct individual score ────────
                         p.score -= 1

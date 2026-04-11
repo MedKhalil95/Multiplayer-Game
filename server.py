@@ -68,7 +68,8 @@ class RoomState:
     """
 
     def __init__(self, room_id, game_type, host_id, host_name,
-                 total_slots, bot_slots, bot_difficulty, host_color=None):
+                 total_slots, bot_slots, bot_difficulty, host_color=None,
+                 team_mode=False):
 
         cfg         = GameFactory.CONFIGS[game_type]
         total_slots = min(total_slots, cfg["max_players"])
@@ -81,6 +82,10 @@ class RoomState:
         self.bot_slots      = bot_slots
         self.human_slots    = total_slots - bot_slots
         self.bot_difficulty = bot_difficulty
+        # team_mode: only valid for exactly 4-slot games (2v2).
+        # total must be 4 and exactly 2 human slots or 4 (all-human).
+        # We store the intent; actual teams are assembled in _start_game.
+        self.team_mode      = team_mode and (total_slots == 4)
 
         # {pid: {name, ready, number, is_bot, color}}
         chosen_color = host_color if host_color else PLAYER_COLOR_PALETTE[0]
@@ -151,6 +156,7 @@ class RoomState:
             "human_slots": self.human_slots,
             "bot_slots":   self.bot_slots,
             "total_slots": self.total_slots,
+            "team_mode":   self.team_mode,
             "status":      self.status,
             "created_ago": int(time.time() - self.created_at),
         }
@@ -173,20 +179,42 @@ class RoomState:
         self.last_state = {}
 
     def slots_dict(self):
-        """One entry per total_slot for the waiting-room UI."""
+        """One entry per total_slot for the waiting-room UI.
+        In team mode, include a team_label field ('A' or 'B') on each slot.
+        Team A = slots 1,3 (top+left sides); Team B = slots 2,4 (bottom+right).
+        """
         slots = []
         human_list = list(self.players.items())
         for i in range(self.human_slots):
+            slot_number = i + 1
+            team_label  = None
+            if self.team_mode:
+                # Slot 1 & 3 → Team A; slot 2 & 4 → Team B
+                # In the slot list, humans fill positions 1..human_slots then bots
+                # fill the rest.  When team_mode=True and total=4 we always have
+                # 4 combined slots; we map sequential index to actual side-slot.
+                _side_order = [1, 2, 3, 4]  # index 0-3 → side-slot number
+                side_slot   = _side_order[i] if i < 4 else slot_number
+                team_label  = "A" if side_slot in (1, 3) else "B"
             if i < len(human_list):
                 pid, p = human_list[i]
-                slots.append({"slot": i+1, "pid": pid, "name": p["name"],
-                               "ready": p["ready"], "is_bot": False, "filled": True})
+                slots.append({"slot": slot_number, "pid": pid, "name": p["name"],
+                               "ready": p["ready"], "is_bot": False, "filled": True,
+                               "team": team_label})
             else:
-                slots.append({"slot": i+1, "filled": False, "is_bot": False})
+                slots.append({"slot": slot_number, "filled": False, "is_bot": False,
+                               "team": team_label})
         for i in range(self.bot_slots):
-            slots.append({"slot": self.human_slots+i+1, "filled": True,
+            slot_number = self.human_slots + i + 1
+            team_label  = None
+            if self.team_mode:
+                _side_order = [1, 2, 3, 4]
+                side_slot   = _side_order[self.human_slots + i] if (self.human_slots + i) < 4 else slot_number
+                team_label  = "A" if side_slot in (1, 3) else "B"
+            slots.append({"slot": slot_number, "filled": True,
                            "is_bot": True, "ready": True,
-                           "name": f"Bot {i+1} ({self.bot_difficulty})"})
+                           "name": f"Bot {i+1} ({self.bot_difficulty})",
+                           "team": team_label})
         return slots
 
 
@@ -257,13 +285,13 @@ def _start_game(room: RoomState):
     bot_ids   = [f"bot_{i+1}_{room.room_id[:6]}" for i in range(room.bot_slots)]
     all_ids   = human_ids + bot_ids
 
-    # Build per-player color map: humans use their chosen color,
-    # bots get a palette color not already taken.
-    taken   = room.taken_colors()
+    # Build per-player color map
+    taken       = room.taken_colors()
     bot_palette = [c for c in PLAYER_COLOR_PALETTE if c not in taken]
-    color_map = {pid: room.players[pid]["color"] for pid in human_ids}
+    color_map   = {pid: room.players[pid]["color"] for pid in human_ids}
     for i, bid in enumerate(bot_ids):
-        color_map[bid] = bot_palette[i % len(bot_palette)] if bot_palette else PLAYER_COLOR_PALETTE[i % len(PLAYER_COLOR_PALETTE)]
+        color_map[bid] = (bot_palette[i % len(bot_palette)] if bot_palette
+                          else PLAYER_COLOR_PALETTE[i % len(PLAYER_COLOR_PALETTE)])
 
     # Build per-player name map
     name_map = {pid: room.players[pid]["name"] for pid in human_ids}
@@ -271,6 +299,18 @@ def _start_game(room: RoomState):
         name_map[bid] = f"Bot {i+1}"
 
     game_config = {"colors": color_map, "names": name_map}
+
+    # ── Team mode (2v2) ────────────────────────────────────────────────
+    # Assign teams so teammates occupy adjacent sides:
+    #   Team A → positions 0 and 2 in all_ids (side-slots 1 and 3: top + left)
+    #   Team B → positions 1 and 3 in all_ids (side-slots 2 and 4: bottom + right)
+    # This matches the adjacent-side layout in CrashBashGame.__init__.
+    if room.team_mode and len(all_ids) == 4:
+        game_config["teams"] = {
+            "A": [all_ids[0], all_ids[2]],   # positions 1 & 3 → top + left
+            "B": [all_ids[1], all_ids[3]],   # positions 2 & 4 → bottom + right
+        }
+
     room.game   = GameFactory.create(room.game_type, room.room_id, all_ids, game_config)
     room.status = "playing"
 
@@ -307,6 +347,7 @@ class CreateBody(BaseModel):
     total_slots:    int  = Field(4, ge=2, le=4)
     bot_slots:      int  = Field(0, ge=0, le=3)
     bot_difficulty: str  = "medium"
+    team_mode:      bool = False
     player_id:      Optional[str] = None
 
 class JoinBody(BaseModel):
@@ -356,7 +397,8 @@ def create_room(body: CreateBody,
     room_id   = uuid.uuid4().hex[:8]
     room      = RoomState(room_id, body.game_type, player_id, body.player_name,
                           body.total_slots, body.bot_slots, body.bot_difficulty,
-                          host_color=body.player_color)
+                          host_color=body.player_color,
+                          team_mode=body.team_mode)
 
     with rooms_lock:
         rooms[room_id] = room

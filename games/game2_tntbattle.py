@@ -275,11 +275,31 @@ class TnTBattleGame(BaseHeadlessGame):
                 p.color = color_map[pid]
             self.players[pid] = p
 
-        self.pickup_crates:  list[PickupCrate]    = []
-        self.thrown_crates:  list[ThrownCrate]    = []
-        self.explosions:     list[ExplosionLogic] = []
-        self.health_fruits:  list[HealthFruit]    = []
-        self.hit_events:     list[dict]           = []  # per-tick, for renderer
+        # ── Team mode ──────────────────────────────────────────────────
+        # config["teams"] = {"A": [pid1, pid2], "B": [pid3, pid4]}
+        # In team mode: thrown crates and melee do NOT damage teammates.
+        # Win condition: a team wins when ALL enemy players are eliminated.
+        raw_teams = self.config.get("teams")
+        self.teams = None
+        self.player_team: dict = {}
+        self._winner_display = None
+
+        if raw_teams and len(raw_teams) >= 2:
+            TEAM_COLORS = ["#E05050", "#5080E0", "#40C878", "#D4D440"]
+            self.teams = {}
+            for t_idx, (tid, members) in enumerate(raw_teams.items()):
+                tc = TEAM_COLORS[t_idx % len(TEAM_COLORS)]
+                self.teams[tid] = {"member_ids": list(members), "color": tc, "eliminated": False}
+                for pid in members:
+                    self.player_team[pid] = tid
+                    if pid in self.players:
+                        self.players[pid].color = tc
+
+        self.pickup_crates  = []
+        self.thrown_crates  = []
+        self.explosions     = []
+        self.health_fruits  = []
+        self.hit_events     = []
 
         # Start with a short timer so first crates appear soon
         self.crate_spawn_timer = 60
@@ -367,13 +387,23 @@ class TnTBattleGame(BaseHeadlessGame):
             for p in alive:
                 if p.player_id == tc.owner_id:
                     continue
+                # Team mode: skip teammates (no friendly fire from crates)
+                if self.teams and self.player_team.get(p.player_id) == self.player_team.get(tc.owner_id):
+                    continue
                 if self.rects_overlap(tc.x, tc.y, tc.size, tc.size,
                                       p.x,  p.y,  p.size, p.size):
                     # Explosion at crate centre
                     ex_x = tc.x + tc.size / 2
                     ex_y = tc.y + tc.size / 2
                     ex   = ExplosionLogic(ex_x, ex_y)
-                    ex.apply(alive)
+                    # In team mode only apply to enemies, not teammates
+                    if self.teams:
+                        thrower_team = self.player_team.get(tc.owner_id)
+                        targets = [pl for pl in alive
+                                   if self.player_team.get(pl.player_id) != thrower_team]
+                        ex.apply(targets)
+                    else:
+                        ex.apply(alive)
                     self.explosions.append(ex)
                     self.hit_events.append({
                         "owner_id":  tc.owner_id,
@@ -396,10 +426,36 @@ class TnTBattleGame(BaseHeadlessGame):
                 p.stun -= 1
 
         # 6. Win check -----------------------------------------------
-        alive_now = [p for p in self.players.values() if not p.eliminated]
-        if len(alive_now) <= 1:
-            winner = alive_now[0].player_id if alive_now else None
-            self._end_game(winner=winner)
+        if self.teams:
+            # Team mode: a team is eliminated when all its members are eliminated
+            for tid, team in self.teams.items():
+                members_alive = [p for p in self.players.values()
+                                 if p.player_id in team["member_ids"] and not p.eliminated]
+                if not members_alive:
+                    team["eliminated"] = True
+            alive_teams = [tid for tid, t in self.teams.items() if not t["eliminated"]]
+            if len(alive_teams) <= 1:
+                if alive_teams:
+                    winning_tid   = alive_teams[0]
+                    winning_team  = self.teams[winning_tid]
+                    names         = " & ".join(
+                        self.config.get("names", {}).get(pid, pid)
+                        for pid in winning_team["member_ids"]
+                    )
+                    self._winner_display = f"{names} WIN!"
+                    self._end_game(winner=winning_tid)
+                else:
+                    self._winner_display = "Draw!"
+                    self._end_game(winner=None)
+        else:
+            alive_now = [p for p in self.players.values() if not p.eliminated]
+            if len(alive_now) <= 1:
+                winner = alive_now[0].player_id if alive_now else None
+                self._winner_display = (
+                    f"{self.config.get('names', {}).get(winner, winner)} WINS!"
+                    if winner else "Draw!"
+                )
+                self._end_game(winner=winner)
 
         return self.get_state()
 
@@ -462,10 +518,13 @@ class TnTBattleGame(BaseHeadlessGame):
         p.y = self.clamp(p.y, 20, H - 20 - p.size)
 
     def _melee_punch(self, attacker: "TNTPlayer", alive: list):
-        """Deal melee damage to the nearest enemy within MELEE_RANGE."""
+        """Deal melee damage to the nearest enemy within MELEE_RANGE (no friendly fire in team mode)."""
         best, best_dist = None, float("inf")
         for p in alive:
             if p.player_id == attacker.player_id:
+                continue
+            # Team mode: skip teammates
+            if self.teams and self.player_team.get(p.player_id) == self.player_team.get(attacker.player_id):
                 continue
             d = math.hypot(attacker.cx - p.cx, attacker.cy - p.cy)
             if d < best_dist:
@@ -537,18 +596,22 @@ class TnTBattleGame(BaseHeadlessGame):
 
     def get_state(self) -> dict:
         return {
-            "game_id":       self.game_id,
-            "game_type":     "tnt_battle",
-            "tick":          self.tick,
-            "arena_w":       self.ARENA_W,
-            "arena_h":       self.ARENA_H,
-            "players":       {pid: p.to_dict() for pid, p in self.players.items()},
-            "pickup_crates": [c.to_dict() for c in self.pickup_crates],
-            "thrown_crates": [c.to_dict() for c in self.thrown_crates],
-            "explosions":    [e.to_dict() for e in self.explosions],
-            "health_fruits": [f.to_dict() for f in self.health_fruits],
-            "hit_events":    self.hit_events,
-            "game_over":     self._over,
-            "winner":        self._winner,
-            "elapsed":       round(self.elapsed(), 2),
+            "game_id":        self.game_id,
+            "game_type":      "tnt_battle",
+            "tick":           self.tick,
+            "arena_w":        self.ARENA_W,
+            "arena_h":        self.ARENA_H,
+            "players":        {pid: p.to_dict() for pid, p in self.players.items()},
+            "pickup_crates":  [c.to_dict() for c in self.pickup_crates],
+            "thrown_crates":  [c.to_dict() for c in self.thrown_crates],
+            "explosions":     [e.to_dict() for e in self.explosions],
+            "health_fruits":  [f.to_dict() for f in self.health_fruits],
+            "hit_events":     self.hit_events,
+            "game_over":      self._over,
+            "winner":         self._winner,
+            "winner_display": self._winner_display,
+            "team_mode":      self.teams is not None,
+            "teams":          self.teams,
+            "player_team":    self.player_team,
+            "elapsed":        round(self.elapsed(), 2),
         }
