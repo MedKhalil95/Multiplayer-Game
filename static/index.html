@@ -128,10 +128,15 @@ input[type=text]:focus,select:focus{border-color:var(--acc)}
 #gameCanvas{display:block;max-width:100vw;touch-action:none}
 .game-hud{width:100%;max-width:800px;display:flex;align-items:center;
           justify-content:space-between;padding:7px 12px;background:var(--surf)}
+/* On mobile, allow canvas to use full viewport width */
+@media (max-width:600px){
+  #gameCanvas{width:100vw !important;max-width:100vw}
+}
 @media (max-width:480px){
   .game-hud{padding:5px 8px}
-  .hud-player{font-size:.75rem}
+  .hud-player{font-size:.82rem}
   .hud-players{gap:7px}
+  .hud-score{font-size:.88rem}
 }
 .hud-players{display:flex;gap:10px;flex-wrap:wrap}
 .hud-player{display:flex;align-items:center;gap:5px;font-size:.82rem}
@@ -1108,6 +1113,17 @@ function onMsg(ev){
   if(evt==="game_starting"){
     showScreen("gameScreen");
     startInputLoop();
+    // On touch devices auto-fullscreen so the arena fills the screen immediately
+    if(window.matchMedia("(pointer:coarse)").matches && !_isFullscreen()){
+      if(_fsSupported){
+        const el  = document.getElementById("gameScreen");
+        const req = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
+        if(req) req.call(el).catch(() => _enterFakeFS());
+        else _enterFakeFS();
+      } else {
+        _enterFakeFS();
+      }
+    }
     // Show "3" immediately so the screen isn't blank while waiting for first countdown tick
     _showCountdown(3);
   }
@@ -1591,6 +1607,7 @@ const ctx    = canvas.getContext("2d");
 
 function resizeCanvas(W, H){
   const isFS  = _isFullscreen();
+  const isMobile = window.matchMedia("(pointer:coarse)").matches;
   const vvW   = window.visualViewport ? window.visualViewport.width  : window.innerWidth;
   const vvH   = window.visualViewport ? window.visualViewport.height : window.innerHeight;
   const hudH  = document.querySelector(".game-hud")?.offsetHeight || 44;
@@ -1598,14 +1615,17 @@ function resizeCanvas(W, H){
   const mobH  = (mobEl && mobEl.style.display !== "none") ? (mobEl.offsetHeight || 0) : 0;
   // Always measure real heights so mobile gets maximum canvas space
   const usedH = hudH + mobH;
-  const pad   = isFS ? 0 : 8;   // tiny breathing room in non-FS mode
-  const mxW   = isFS ? vvW  : Math.min(vvW, 800);
+  // On mobile (touch device), allow full viewport width — no 800px cap
+  const mxW   = isFS ? vvW : (isMobile ? vvW : Math.min(vvW, 800));
+  const pad   = isFS ? 0 : (isMobile ? 2 : 8);
   const mxH   = vvH - usedH - pad;
   const sc    = Math.min(mxW / W, Math.max(mxH, 80) / H);
   canvas.style.width  = Math.floor(W * sc) + "px";
   canvas.style.height = Math.floor(H * sc) + "px";
   canvas.width  = W;
   canvas.height = H;
+  // Expose scale for draw helpers that want to adapt label/font size
+  canvas._scale = sc;
 }
 
 const _fsSupported = !!(
@@ -1734,8 +1754,11 @@ function playerName(p){
 }
 
 function drawPlayerLabel(p){
+  const sc   = canvas._scale || 1;
+  // Keep label readable: minimum effective 10px on screen, max 13px
+  const size = Math.round(Math.min(13, Math.max(10, 11 / sc)));
   ctx.fillStyle = "#000";
-  ctx.font      = "bold 11px sans-serif";
+  ctx.font      = `bold ${size}px sans-serif`;
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   const label = playerName(p);
   const pw = p.w || p.size;
