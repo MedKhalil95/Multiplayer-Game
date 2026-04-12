@@ -1531,9 +1531,9 @@ function _speakGameOver(state){
 
     // ── Free-for-all: single winner ──
     if(!winP){ _playCortexLaughTwice(); return; }
-    const name = winP.is_bot
-      ? `Bot ${winP.number}`
-      : (S.pidToName[winP.player_id] || winP.name || `Player ${winP.number}`);
+    const name = winP.name
+      || S.pidToName[winP.player_id]
+      || `Player ${winP.number}`;
     const phrase = `${name} wins!`;
     if(!_cdVoice._synth){ _playCortexLaughTwice(); return; }
     _cdVoice._synth.cancel();
@@ -1955,7 +1955,7 @@ function rr(x,y,w,h,r){
 }
 
 function playerName(p){
-  if(p.is_bot) return `Bot ${p.number}`;
+  if(p.name) return p.name;           // server provides the real name (human or bot)
   return S.pidToName[p.player_id] || `P${p.number}`;
 }
 

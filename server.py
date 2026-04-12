@@ -52,6 +52,16 @@ PLAYER_COLOR_PALETTE = [
     "#DC50DC", "#50DCDC", "#FF8C00", "#A0A0FF",
 ]
 
+BOT_NAMES = ["Ahmed", "Anass", "Taym", "Larin", "Meria", "Youssef", "Salah"]
+
+def _pick_bot_name(exclude: set = None) -> str:
+    """Pick a random bot name, avoiding already-used names when possible."""
+    exclude = exclude or set()
+    available = [n for n in BOT_NAMES if n not in exclude]
+    if not available:
+        available = BOT_NAMES  # all used — reset and allow repeats
+    return _random.choice(available)
+
 class RoomState:
     """
     Slot model
@@ -107,6 +117,7 @@ class RoomState:
         self.subscribers: dict[str, queue.Queue] = {}
         self._subs_lock  = threading.Lock()
         self.last_state: dict = {}
+        self.name_map:   dict = {}   # pid/bid -> display name, set by _start_game
         self.created_at  = time.time()
 
     # ── properties ───────────────────────────────────────────────────
@@ -229,7 +240,8 @@ class RoomState:
                 # A slot is "open for human" if we still have human_slots to fill
                 # and the total humans haven't filled all human_slots yet
                 bot_counter += 1
-                bot_name = f"Bot {bot_counter} ({self.bot_difficulty})"
+                used_names = {s["name"].split(" ")[0] for s in slots if s.get("is_bot")}
+                bot_name = _pick_bot_name(exclude=used_names)
                 slots.append({"slot": slot_number, "filled": True,
                                "is_bot": True, "ready": True,
                                "name": bot_name, "team": team_label,
@@ -281,11 +293,20 @@ def _game_loop(room: RoomState):
             print(f"[loop] error  room={room.room_id}: {e}")
             break
 
+        # Enrich player entries with display name and is_bot flag
+        for pid, pdata in state.get("players", {}).items():
+            pdata["name"]   = room.name_map.get(pid, pid)
+            pdata["is_bot"] = pid not in room.players
+
         room.broadcast(state)
 
         if room.game.is_over():
             room.status = "finished"
             final = room.game.get_state()
+            # Enrich final state too
+            for pid, pdata in final.get("players", {}).items():
+                pdata["name"]   = room.name_map.get(pid, pid)
+                pdata["is_bot"] = pid not in room.players
             final["host_id"] = room.host_id
             room.broadcast(final)
             print(f"[loop] over  room={room.room_id}  "
@@ -328,7 +349,8 @@ def _start_game(room: RoomState):
     # Build per-player name map
     name_map = {pid: room.players[pid]["name"] for pid in human_ids}
     for i, bid in enumerate(bot_ids):
-        name_map[bid] = f"Bot {i+1}"
+        used_names = set(name_map.values())
+        name_map[bid] = _pick_bot_name(exclude=used_names)
 
     # slot_numbers: {pid -> slot_number (1=top,2=bottom,3=left,4=right)}
     # This is the physical side each player CHOSE in the waiting room,
@@ -341,6 +363,7 @@ def _start_game(room: RoomState):
 
     game_config = {"colors": color_map, "names": name_map,
                    "slot_numbers": slot_number_map}
+    room.name_map = name_map   # persist for _game_loop enrichment
 
     # ── Team mode (2v2) ────────────────────────────────────────────────
     # Assign teams so teammates occupy adjacent sides:
