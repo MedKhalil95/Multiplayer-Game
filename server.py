@@ -93,6 +93,11 @@ class RoomState:
             host_id: {"name": host_name, "ready": False,
                       "number": 1, "is_bot": False, "color": chosen_color}
         }
+        # slot_map: slot_number (1..total_slots) -> pid, "bot", or None
+        # Humans can freely pick ANY of the total_slots positions.
+        # Unoccupied positions will be filled by bots at game start.
+        self.slot_map: dict[int, str | None] = {i+1: None for i in range(self.total_slots)}
+        self.slot_map[1] = host_id  # host starts in slot 1
         self.status      = "waiting"
         self.game        = None
         self.bots: dict  = {}
@@ -177,44 +182,58 @@ class RoomState:
         self.bots    = {}
         self.status  = "waiting"
         self.last_state = {}
+        # Keep slot_map but clear slots whose player left
+        for sn in list(self.slot_map):
+            pid = self.slot_map[sn]
+            if pid and pid not in self.players:
+                self.slot_map[sn] = None
+        # Re-seat any player not currently in slot_map
+        for pid in self.players:
+            if pid not in self.slot_map.values():
+                free = next((s for s in sorted(self.slot_map)
+                             if self.slot_map[s] is None), None)
+                if free: self.slot_map[free] = pid
 
     def slots_dict(self):
         """One entry per total_slot for the waiting-room UI.
-        In team mode, include a team_label field ('A' or 'B') on each slot.
+        Human slots respect slot_map so players can choose their seat/team.
         Team A = slots 1,3 (top+left sides); Team B = slots 2,4 (bottom+right).
         """
+        # All total_slots are shown. Humans occupy their chosen slot;
+        # remaining slots will be filled by bots at game start.
         slots = []
-        human_list = list(self.players.items())
-        for i in range(self.human_slots):
-            slot_number = i + 1
-            team_label  = None
+        # Figure out which slots humans have claimed
+        human_slots_taken = {sn for sn, pid in self.slot_map.items()
+                             if pid and pid in self.players}
+        # Count how many bot slots are "default" (not overridden by a human)
+        bot_counter = 0
+        for slot_number in range(1, self.total_slots + 1):
+            team_label = None
             if self.team_mode:
-                # Slot 1 & 3 → Team A; slot 2 & 4 → Team B
-                # In the slot list, humans fill positions 1..human_slots then bots
-                # fill the rest.  When team_mode=True and total=4 we always have
-                # 4 combined slots; we map sequential index to actual side-slot.
-                _side_order = [1, 2, 3, 4]  # index 0-3 → side-slot number
-                side_slot   = _side_order[i] if i < 4 else slot_number
-                team_label  = "A" if side_slot in (1, 3) else "B"
-            if i < len(human_list):
-                pid, p = human_list[i]
+                team_label = "A" if slot_number in (1, 3) else "B"
+            pid = self.slot_map.get(slot_number)
+            if pid and pid in self.players:
+                # Human occupying this slot
+                p = self.players[pid]
                 slots.append({"slot": slot_number, "pid": pid, "name": p["name"],
                                "ready": p["ready"], "is_bot": False, "filled": True,
                                "team": team_label})
-            else:
+            elif slot_number in human_slots_taken:
+                # Should not happen, but guard anyway
                 slots.append({"slot": slot_number, "filled": False, "is_bot": False,
                                "team": team_label})
-        for i in range(self.bot_slots):
-            slot_number = self.human_slots + i + 1
-            team_label  = None
-            if self.team_mode:
-                _side_order = [1, 2, 3, 4]
-                side_slot   = _side_order[self.human_slots + i] if (self.human_slots + i) < 4 else slot_number
-                team_label  = "A" if side_slot in (1, 3) else "B"
-            slots.append({"slot": slot_number, "filled": True,
-                           "is_bot": True, "ready": True,
-                           "name": f"Bot {i+1} ({self.bot_difficulty})",
-                           "team": team_label})
+            else:
+                # This slot will be a bot (or is open for a human to claim)
+                human_count_so_far = len(self.players)
+                free_slots_for_humans = self.human_slots - human_count_so_far
+                # A slot is "open for human" if we still have human_slots to fill
+                # and the total humans haven't filled all human_slots yet
+                bot_counter += 1
+                bot_name = f"Bot {bot_counter} ({self.bot_difficulty})"
+                slots.append({"slot": slot_number, "filled": True,
+                               "is_bot": True, "ready": True,
+                               "name": bot_name, "team": team_label,
+                               "displaceable": free_slots_for_humans > 0})
         return slots
 
 
@@ -281,9 +300,22 @@ def _game_loop(room: RoomState):
 
 
 def _start_game(room: RoomState):
-    human_ids = list(room.players.keys())
-    bot_ids   = [f"bot_{i+1}_{room.room_id[:6]}" for i in range(room.bot_slots)]
-    all_ids   = human_ids + bot_ids
+    # Build all_ids preserving slot order across ALL total_slots.
+    # Human-occupied slots keep their pid; remaining slots get bot ids.
+    all_ids  = []
+    bot_idx  = 0
+    bot_map  = {}  # slot_number -> bot_id
+    for sn in sorted(room.slot_map):
+        pid = room.slot_map[sn]
+        if pid and pid in room.players:
+            all_ids.append(pid)
+        else:
+            bid = f"bot_{bot_idx+1}_{room.room_id[:6]}"
+            all_ids.append(bid)
+            bot_map[sn] = bid
+            bot_idx += 1
+    human_ids = [pid for pid in all_ids if pid in room.players]
+    bot_ids   = [bid for bid in all_ids if bid not in room.players]
 
     # Build per-player color map
     taken       = room.taken_colors()
@@ -298,7 +330,17 @@ def _start_game(room: RoomState):
     for i, bid in enumerate(bot_ids):
         name_map[bid] = f"Bot {i+1}"
 
-    game_config = {"colors": color_map, "names": name_map}
+    # slot_numbers: {pid -> slot_number (1=top,2=bottom,3=left,4=right)}
+    # This is the physical side each player CHOSE in the waiting room,
+    # derived from their position in slot_map.
+    slot_number_map = {}
+    for sn in sorted(room.slot_map):
+        pid = room.slot_map[sn]
+        if pid and pid in room.players:
+            slot_number_map[pid] = sn  # sn IS the side number (1-4)
+
+    game_config = {"colors": color_map, "names": name_map,
+                   "slot_numbers": slot_number_map}
 
     # ── Team mode (2v2) ────────────────────────────────────────────────
     # Assign teams so teammates occupy adjacent sides:
@@ -306,9 +348,10 @@ def _start_game(room: RoomState):
     #   Team B → positions 1 and 3 in all_ids (side-slots 2 and 4: bottom + right)
     # This matches the adjacent-side layout in CrashBashGame.__init__.
     if room.team_mode and len(all_ids) == 4:
+        # Slot order IS team order: slots 1&3 → Team A, slots 2&4 → Team B
         game_config["teams"] = {
-            "A": [all_ids[0], all_ids[2]],   # positions 1 & 3 → top + left
-            "B": [all_ids[1], all_ids[3]],   # positions 2 & 4 → bottom + right
+            "A": [all_ids[0], all_ids[2]],   # slot positions 1 & 3 → top + left
+            "B": [all_ids[1], all_ids[3]],   # slot positions 2 & 4 → bottom + right
         }
 
     room.game   = GameFactory.create(room.game_type, room.room_id, all_ids, game_config)
@@ -351,11 +394,16 @@ class CreateBody(BaseModel):
     player_id:      Optional[str] = None
 
 class JoinBody(BaseModel):
-    player_name:  str           = "Player"
-    player_color: Optional[str] = None
-    player_id:    Optional[str] = None
+    player_name:    str           = "Player"
+    player_color:   Optional[str] = None
+    player_id:      Optional[str] = None
+    preferred_slot: Optional[int] = None  # 1-indexed slot the player wants
 
 class ReadyBody(BaseModel):
+    player_id: Optional[str] = None
+
+class PickSlotBody(BaseModel):
+    slot:      int            # 1-indexed desired slot number
     player_id: Optional[str] = None
 
 class InputBody(BaseModel):
@@ -451,7 +499,19 @@ def join_room(room_id: str, body: JoinBody,
     if room.status != "waiting": raise HTTPException(409, "Game already started")
     if room.is_full:             raise HTTPException(409, "Room is full")
 
-    number = room.human_count + 1
+    # Determine which slot to place this player in.
+    # All total_slots are candidates — humans can displace bot-default slots.
+    # "Free" means no human pid is there (bot-default slots count as free for joining).
+    preferred = getattr(body, "preferred_slot", None)
+    human_occupied = {sn for sn, pid in room.slot_map.items() if pid in room.players}
+    free_slots = [s for s in room.slot_map if s not in human_occupied]
+    if preferred and preferred in free_slots:
+        chosen_slot = preferred
+    elif free_slots:
+        chosen_slot = min(free_slots)
+    else:
+        raise HTTPException(409, "Room is full")
+    number = chosen_slot
     taken  = room.taken_colors()
     if body.player_color and body.player_color not in taken:
         join_color = body.player_color
@@ -461,6 +521,7 @@ def join_room(room_id: str, body: JoinBody,
     room.players[player_id] = {"name": body.player_name, "ready": False,
                                 "number": number, "is_bot": False,
                                 "color": join_color}
+    room.slot_map[chosen_slot] = player_id
     room.input_queues[player_id] = queue.Queue(maxsize=4)
 
     print(f"[room] join  id={room_id}  player={body.player_name}  "
@@ -496,13 +557,18 @@ def leave_room(room_id: str,
     if player_id == room.host_id:
         raise HTTPException(403, "Host cannot leave – close the room instead")
 
-    # Remove the player and their input queue
+    # Remove the player, their input queue, and their slot
     del room.players[player_id]
     room.input_queues.pop(player_id, None)
+    for sn in room.slot_map:
+        if room.slot_map[sn] == player_id:
+            room.slot_map[sn] = None
+            break
 
-    # Re-number remaining humans so slots stay contiguous
-    for i, (pid, p) in enumerate(room.players.items()):
-        p["number"] = i + 1
+    # Re-number players by their slot position
+    for sn, pid in sorted(room.slot_map.items()):
+        if pid and pid in room.players:
+            room.players[pid]["number"] = sn
 
     print(f"[room] leave  id={room_id}  player={player_id}  "
           f"remaining={room.human_count}/{room.human_slots}")
@@ -571,6 +637,48 @@ def rematch(room_id: str,
 
     return {"status": "waiting", "slots": room.slots_dict()}
 
+
+
+@app.post("/api/rooms/{room_id}/pick_slot")
+def pick_slot(room_id: str, body: PickSlotBody,
+              x_player_id: Optional[str] = Header(None)):
+    """
+    Move a player to a different human slot while in the waiting room.
+    The target slot must be unoccupied. The player's old slot is freed.
+    """
+    room = rooms.get(room_id)
+    if not room: raise HTTPException(404, "Room not found")
+    if room.status != "waiting": raise HTTPException(409, "Game already started")
+
+    player_id = _pid(x_player_id, body.player_id)
+    if player_id not in room.players:
+        raise HTTPException(403, "Not in this room")
+
+    target = body.slot
+    if target not in room.slot_map:
+        raise HTTPException(400, f"Slot {target} does not exist (valid: 1-{room.total_slots})")
+    if room.slot_map[target] == player_id:
+        return {"status": "ok", "slot": target, "slots": room.slots_dict()}  # no-op
+    # A slot is available if no OTHER human is in it
+    current_occupant = room.slot_map.get(target)
+    if current_occupant and current_occupant in room.players:
+        raise HTTPException(409, f"Slot {target} is already taken by another player")
+
+    # Free old slot
+    for sn in room.slot_map:
+        if room.slot_map[sn] == player_id:
+            room.slot_map[sn] = None
+            break
+    # Occupy new slot
+    room.slot_map[target] = player_id
+    room.players[player_id]["number"] = target
+    # Reset ready so teams aren't locked in accidentally
+    room.players[player_id]["ready"] = False
+
+    print(f"[room] pick_slot  id={room_id}  player={player_id}  slot={target}")
+    room.broadcast({"_event": "player_joined", "slots": room.slots_dict(),
+                    "room_id": room_id})
+    return {"status": "ok", "slot": target, "slots": room.slots_dict()}
 
 
 @app.post("/api/rooms/{room_id}/input")

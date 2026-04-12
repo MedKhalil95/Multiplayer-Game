@@ -262,6 +262,11 @@ class CrashBashGame(BaseHeadlessGame):
 
         pid_to_number: dict[str, int] = {}
 
+        # config["slot_numbers"] = {pid: slot_number} lets the server
+        # pass each player's explicitly chosen physical side (1=top,
+        # 2=bottom, 3=left, 4=right) rather than always using list index.
+        explicit_slots: dict[str, int] = self.config.get("slot_numbers", {})
+
         if raw_teams and len(raw_teams) == 2:
             team_keys  = list(raw_teams.keys())
             # Team A → adjacent sides top(1) + left(3)
@@ -269,16 +274,43 @@ class CrashBashGame(BaseHeadlessGame):
             side_slots = {team_keys[0]: [1, 3], team_keys[1]: [2, 4]}
             for tid, members in raw_teams.items():
                 for i, pid in enumerate(members[:2]):
-                    pid_to_number[pid] = side_slots[tid][i]
-            # Any additional player_ids not in a team get remaining slots
-            used = set(pid_to_number.values())
-            spare = [s for s in range(1, 5) if s not in used]
+                    # Honour explicit choice if within the team's allowed sides
+                    allowed = side_slots[tid]
+                    chosen  = explicit_slots.get(pid)
+                    if chosen in allowed:
+                        pid_to_number[pid] = chosen
+                    else:
+                        pid_to_number[pid] = allowed[i]
+            # Fix collisions: two players on same side → give second one the other team slot
+            used = {}
+            for pid, sn in list(pid_to_number.items()):
+                if sn in used:
+                    # find an unused slot in same team
+                    tid = next(t for t, ms in raw_teams.items() if pid in ms)
+                    free = [s for s in side_slots[tid] if s not in used]
+                    pid_to_number[pid] = free[0] if free else sn
+                used[pid_to_number[pid]] = pid
+            # Fill in any unassigned players
+            all_used = set(pid_to_number.values())
+            spare = [s for s in range(1, 5) if s not in all_used]
             for pid in player_ids[:4]:
                 if pid not in pid_to_number:
                     pid_to_number[pid] = spare.pop(0) if spare else 1
         else:
-            for i, pid in enumerate(player_ids[:4]):
-                pid_to_number[pid] = i + 1
+            # Free-for-all: honour explicit slot choices, fill gaps in order
+            used_slots: set[int] = set()
+            available  = list(range(1, len(player_ids[:4]) + 1))
+            # First pass: assign explicit choices
+            for pid in player_ids[:4]:
+                sn = explicit_slots.get(pid)
+                if sn and sn in available and sn not in used_slots:
+                    pid_to_number[pid] = sn
+                    used_slots.add(sn)
+            # Second pass: fill remaining in list order
+            auto_slots = [s for s in available if s not in used_slots]
+            for pid in player_ids[:4]:
+                if pid not in pid_to_number:
+                    pid_to_number[pid] = auto_slots.pop(0)
 
         # Build players using the computed number assignments
         self.players: dict[str, CBPlayer] = {}

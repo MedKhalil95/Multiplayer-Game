@@ -113,6 +113,13 @@ input[type=text]:focus,select:focus{border-color:var(--acc)}
 .wait-slot.human-filled .wait-dot{background:var(--acc)}
 .wait-slot.bot-slot .wait-dot{background:#d4943c}
 .wait-slot.you .wait-dot{background:var(--green)}
+.wait-slot.slot-pickable{border-color:#50a050;cursor:pointer;opacity:.9}
+.wait-slot.slot-pickable:hover{border-color:#70d070;opacity:1;background:rgba(80,160,80,.08)}
+.wait-slot.slot-displaceable{cursor:pointer}
+.wait-slot.slot-displaceable:hover{border-color:#c07820;background:rgba(192,120,32,.10)}
+.btn-move{background:none;border:1.5px solid var(--acc);color:var(--acc);border-radius:5px;
+          padding:2px 9px;font-size:.72rem;cursor:pointer;white-space:nowrap}
+.btn-move:hover{background:var(--acc);color:#000}
 .wait-name{flex:1;font-size:.9rem}
 .wait-status{font-size:.78rem;color:var(--muted)}
 .countdown{font-size:3rem;font-weight:900;color:var(--acc);
@@ -603,6 +610,7 @@ const S = {
   sse: null, inputLoop: null, lastState: null, keys: {},
   pidToName: {},    // pid → display name, built from room slots
   selectedColor: null,  // chosen player color hex
+  preferredSlot: null,  // slot number player wants to occupy
 };
 localStorage.setItem("pid", S.playerId);
 
@@ -927,10 +935,34 @@ async function createGame(){
 
     S.roomId  = data.room_id;
     S.hostId  = data.player_id;   // creator is always host
-    S.pidToName[S.playerId] = name;  // store own name
+    S.pidToName[S.playerId] = name;
     localStorage.setItem("playerName", name);
-    // populate bot names from slots
     if(data.slots) data.slots.forEach(sl => { if(sl.pid && sl.name) S.pidToName[sl.pid] = sl.name; });
+
+    // If game didn't start immediately (multi-human room), let host pick slot
+    if(data.status !== "playing" && data.slots){
+      const allSlots = data.slots.filter(s => !s.is_bot || s.displaceable);
+      if(allSlots.length > 1){
+        const TEAM_COLORS = {A:"🔴",B:"🔵"};
+        const labels = allSlots.map(s => {
+          const teamIcon = s.team ? ` ${TEAM_COLORS[s.team]||""} Team ${s.team}` : "";
+          const youTag   = s.filled && s.pid === S.playerId ? " ← you (default)" : "";
+          const botTag   = s.is_bot ? " (replaces bot)" : "";
+          return `Slot ${s.slot}${teamIcon}${youTag}${botTag}`;
+        });
+        // Show picker — host can confirm default slot 1 or pick another
+        const choice = await showSlotPicker(labels, allSlots.map(s=>s.slot),
+                        "Choose your starting position", "You're currently in Slot 1 by default.");
+        if(choice !== null && choice !== 1){
+          // Call pick_slot to move the host before anyone else joins
+          await fetch(`/api/rooms/${data.room_id}/pick_slot`,{
+            method:"POST",
+            headers:{"Content-Type":"application/json","X-Player-Id":S.playerId},
+            body: JSON.stringify({slot: choice, player_id: S.playerId}),
+          });
+        }
+      }
+    }
     enterRoom(data.room_id, data.status==="playing");
 
   }catch(e){
@@ -977,23 +1009,80 @@ async function joinByCode(){
 async function joinRoom(roomId, nameOverride){
   const name = nameOverride || document.getElementById("joinName").value.trim()||"Player";
   document.getElementById("joinError").textContent = "";
+
+  // Fetch room details to show available slots before joining
+  let roomInfo = null;
+  try{ roomInfo = await fetch(`/api/rooms/${roomId}`).then(r=>r.json()); }catch{}
+
+  // If there are multiple free human slots and team mode, let player pick
+  if(roomInfo && roomInfo.slots){
+    // Available slots = empty human slots + bot-default slots the human can displace
+    const availableSlots = roomInfo.slots.filter(s =>
+      (!s.is_bot && !s.filled) || (s.is_bot && s.displaceable)
+    );
+    if(availableSlots.length > 1){
+      const TEAM_COLORS = {A:"🔴",B:"🔵"};
+      const labels = availableSlots.map(s => {
+        const teamIcon = s.team ? ` ${TEAM_COLORS[s.team]||""} Team ${s.team}` : "";
+        const botNote  = s.is_bot ? " (replaces bot)" : "";
+        return `Slot ${s.slot}${teamIcon}${botNote}`;
+      });
+      const choice = await showSlotPicker(labels, availableSlots.map(s=>s.slot));
+      if(choice !== null) S.preferredSlot = choice;
+    } else if(availableSlots.length === 1){
+      S.preferredSlot = availableSlots[0].slot;
+    }
+  }
+
   try{
     const res  = await fetch(`/api/rooms/${roomId}/join`,{
       method:"POST",
       headers:{"Content-Type":"application/json","X-Player-Id":S.playerId},
       body: JSON.stringify({player_name:name, player_id:S.playerId,
-                            player_color: S.selectedColor || COLOR_PALETTE[0]}),
+                            player_color: S.selectedColor || COLOR_PALETTE[0],
+                            preferred_slot: S.preferredSlot || null}),
     });
     const data = await res.json();
     if(!res.ok) throw new Error(data.detail||data.error||"Could not join");
+    S.preferredSlot = null;  // clear after use
     S.roomId = roomId;
-    S.pidToName[S.playerId] = name;  // store own name
+    S.pidToName[S.playerId] = name;
     localStorage.setItem("playerName", name);
-    // server returns host_id in the join response via lobby_dict fields
     if(data.host_id) S.hostId = data.host_id;
     if(data.slots) data.slots.forEach(sl => { if(sl.pid && sl.name) S.pidToName[sl.pid] = sl.name; });
     enterRoom(roomId, data.status==="playing");
   }catch(e){ document.getElementById("joinError").textContent = e.message; }
+}
+
+/** Show a modal slot-picker dialog. Returns chosen slot number or null if dismissed. */
+function showSlotPicker(labels, slotNumbers,
+    title="Choose your slot",
+    subtitle="Pick the position you want to play in"){
+  return new Promise(resolve => {
+    const overlay = document.createElement("div");
+    overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:9999;"
+                          + "display:flex;align-items:center;justify-content:center";
+    const box = document.createElement("div");
+    box.style.cssText = "background:#1a1a2e;border:2px solid var(--border);border-radius:14px;"
+                      + "padding:24px 28px;max-width:360px;width:90%;text-align:center";
+    box.innerHTML = `<h3 style="margin:0 0 6px">${title}</h3>
+      <p style="color:var(--muted);font-size:.83rem;margin:0 0 16px">${subtitle}</p>
+      <div style="display:flex;flex-direction:column;gap:9px">
+        ${labels.map((l,i) => `<button onclick="this.closest('.sp-overlay').resolve(${slotNumbers[i]})"
+          style="padding:10px 18px;border-radius:8px;border:1.5px solid var(--acc);
+                 background:#0e0e1e;color:var(--acc);font-size:.92rem;cursor:pointer;
+                 transition:.15s;text-align:left"
+          onmouseover="this.style.background='var(--acc)';this.style.color='#000'"
+          onmouseout="this.style.background='#0e0e1e';this.style.color='var(--acc)'">${l}</button>`).join("")}
+        <button onclick="this.closest('.sp-overlay').resolve(null)"
+          style="margin-top:4px;padding:7px;border-radius:8px;border:1.5px solid var(--border);
+                 background:none;color:var(--muted);font-size:.82rem;cursor:pointer">Keep current slot</button>
+      </div>`;
+    overlay.classList.add("sp-overlay");
+    overlay.resolve = (v) => { document.body.removeChild(overlay); resolve(v); };
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+  });
 }
 
 // ═══════════════════════════════════════════════════════════ ROOM ENTRY
@@ -1023,11 +1112,10 @@ function renderWaitSlots(slots){
   const c = document.getElementById("waitSlots");
   if(!slots.length){ c.innerHTML = '<div class="notice">Connecting…</div>'; return; }
 
-  // Check if this is a team-mode room
   const isTeamMode = slots.some(s => s.team);
+  const iAmInRoom  = slots.some(s => s.pid === S.playerId);
+  const myKit      = S.selectedColor || COLOR_PALETTE[0];
 
-  // Show a "your kit" reminder at the top when there are multiple players
-  const myKit = S.selectedColor || COLOR_PALETTE[0];
   const kitBanner = slots.length > 1 ? `
     <div style="display:flex;align-items:center;gap:8px;padding:7px 14px;
                 margin-bottom:6px;background:rgba(255,255,255,.04);
@@ -1039,49 +1127,106 @@ function renderWaitSlots(slots){
       <span style="margin-left:auto;font-size:.72rem;opacity:.7">(opponents see their own kit)</span>
     </div>` : "";
 
-  // Team mode header showing team layout
   const TEAM_COLORS = {A:"#E05050", B:"#5080E0"};
   const teamHeader = isTeamMode ? `
     <div style="display:flex;gap:8px;margin-bottom:8px">
       <div style="flex:1;background:rgba(224,80,80,.12);border:1.5px solid #E05050;
                   border-radius:8px;padding:8px 10px;font-size:.8rem;text-align:center">
         <span style="color:#E05050;font-weight:700">🔴 Team A</span><br>
-        <span style="color:var(--muted);font-size:.72rem">Top + Left</span>
+        <span style="color:var(--muted);font-size:.72rem">Slots 1 &amp; 3 · Top + Left</span>
       </div>
       <div style="flex:1;background:rgba(80,128,224,.12);border:1.5px solid #5080E0;
                   border-radius:8px;padding:8px 10px;font-size:.8rem;text-align:center">
         <span style="color:#5080E0;font-weight:700">🔵 Team B</span><br>
-        <span style="color:var(--muted);font-size:.72rem">Bottom + Right</span>
+        <span style="color:var(--muted);font-size:.72rem">Slots 2 &amp; 4 · Bottom + Right</span>
       </div>
     </div>` : "";
 
+  window._lastSlots = slots;  // cache so pickSlot() can read current state
   c.innerHTML = kitBanner + teamHeader + slots.map(s=>{
-    const isYou = s.pid === S.playerId;
-    let cls = "wait-slot";
-    if(s.is_bot)         cls += " bot-slot";
-    else if(s.filled)    cls += " human-filled";
-    if(isYou)            cls = "wait-slot you";
+    const isYou        = s.pid === S.playerId;
+    const isBotDefault = s.is_bot && !isYou;           // bot placeholder, no human here
+    const isEmptyHuman = !s.is_bot && !s.filled;       // genuine empty human slot
+    // Player can move here if: they are in the room AND
+    // the slot is either an empty human slot OR a displaceable bot slot
+    const canMove = iAmInRoom && !isYou &&
+                    (isEmptyHuman || (isBotDefault && s.displaceable));
 
-    const icon  = s.is_bot ? "🤖" : s.filled ? "👤" : "⬜";
-    const name  = s.filled ? (s.name+(isYou?" (you)":"")) : "Waiting…";
-    const badge = s.is_bot ? "🤖 Bot"
+    let cls = "wait-slot";
+    if(isBotDefault && !canMove) cls += " bot-slot";
+    else if(isBotDefault)        cls += " bot-slot slot-displaceable";
+    else if(s.filled)            cls += " human-filled";
+    if(isYou)                    cls = "wait-slot you";
+    if(canMove && isEmptyHuman)  cls += " slot-pickable";
+
+    const icon = isYou        ? "👤"
+               : isBotDefault ? "🤖"
+               : s.filled     ? "👤"
+               : "⬜";
+
+    const name = isYou        ? s.name + " (you)"
+               : isBotDefault && canMove ? s.name + " — click to take this slot"
+               : isBotDefault ? s.name
+               : s.filled     ? s.name
+               : canMove      ? "Click to move here"
+               : "Waiting…";
+
+    const badge = isYou    ? `<button class="btn-move" onclick="pickSlot(${s.slot})">↕ Switch slot</button>`
+                : canMove  ? `<button class="btn-move" onclick="pickSlot(${s.slot})">➡ Take slot ${s.slot}</button>`
+                : isBotDefault ? "🤖 Bot"
                 : s.filled ? (s.ready ? "✅ Ready" : "⏳ Waiting")
                 : "";
 
-    // Team badge
     let teamBadge = "";
     if(isTeamMode && s.team){
       const tc = TEAM_COLORS[s.team] || "#888";
-      teamBadge = `<span style="font-size:.72rem;font-weight:700;color:${tc};margin-left:4px">${s.team==="A"?"🔴":"🔵"} ${s.team}</span>`;
+      teamBadge = `<span style="font-size:.72rem;font-weight:700;color:${tc};margin-left:4px">${s.team==="A"?"🔴":"🔵"} Team ${s.team}</span>`;
     }
 
     const dotStyle = isYou ? `style="background:${myKit}"` : "";
-    return `<div class="${cls}">
+    const clickHandler = canMove ? `onclick="pickSlot(${s.slot})"` : "";
+    return `<div class="${cls}" ${clickHandler}>
       <div class="wait-dot" ${dotStyle}></div>
-      <span class="wait-name">${icon} ${name}${teamBadge}</span>
+      <span class="wait-name">${icon} <strong>Slot ${s.slot}</strong> — ${name}${teamBadge}</span>
       <span class="wait-status">${badge}</span>
     </div>`;
   }).join("");
+}
+
+async function pickSlot(slotNumber){
+  if(!S.roomId) return;
+  // If clicking own slot, show the full slot picker instead
+  const mySlot = (window._lastSlots||[]).find(s=>s.pid===S.playerId);
+  if(mySlot && mySlot.slot === slotNumber){
+    const slots = window._lastSlots || [];
+    const available = slots.filter(s =>
+      s.slot !== slotNumber &&
+      ((!s.is_bot && !s.filled) || (s.is_bot && s.displaceable))
+    );
+    if(!available.length){ return; }  // nowhere to go
+    const TEAM_COLORS = {A:"🔴",B:"🔵"};
+    const labels = available.map(s=>{
+      const t = s.team ? ` ${TEAM_COLORS[s.team]||""} Team ${s.team}` : "";
+      const b = s.is_bot ? " (replaces bot)" : "";
+      return `Slot ${s.slot}${t}${b}`;
+    });
+    const choice = await showSlotPicker(labels, available.map(s=>s.slot),
+      "Switch your slot", `Currently in Slot ${slotNumber} — pick a new position`);
+    if(choice === null) return;
+    slotNumber = choice;
+  }
+  try{
+    const res = await fetch(`/api/rooms/${S.roomId}/pick_slot`,{
+      method: "POST",
+      headers: {"Content-Type":"application/json","X-Player-Id": S.playerId},
+      body: JSON.stringify({slot: slotNumber, player_id: S.playerId}),
+    });
+    if(!res.ok){
+      const d = await res.json();
+      alert(d.detail || "Could not switch slot");
+    }
+    // Server broadcasts player_joined → renderWaitSlots refreshes automatically
+  } catch(e){ console.error("pickSlot error", e); }
 }
 
 let readySent = false;
