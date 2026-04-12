@@ -340,6 +340,9 @@ class CrashBashGame(BaseHeadlessGame):
         self.score_events: list[dict] = []
         self._winner_display: str | None = None  # human-readable "Player A & Player B win!"
 
+        # names map: pid -> display name (set by server via config["names"])
+        self._names: dict[str, str] = self.config.get("names", {})
+
     # ── tick ──────────────────────────────────────────────────────────
 
     def update(self, inputs: dict, dt: float = None) -> dict:
@@ -435,8 +438,8 @@ class CrashBashGame(BaseHeadlessGame):
                 winning_team = alive_teams[0] if alive_teams else None
                 if winning_team:
                     # Build announcement string: "Alice & Bob WIN!"
-                    names = " & ".join(winning_team.member_ids)
-                    self._winner_display = f"{names} WIN!"
+                    display_names = [self._names.get(pid, pid) for pid in winning_team.member_ids]
+                    self._winner_display = f"{' & '.join(display_names)} WIN!"
                     self._end_game(winner=winning_team.team_id)
                 else:
                     self._winner_display = "Draw!"
@@ -445,7 +448,11 @@ class CrashBashGame(BaseHeadlessGame):
             alive_now = [p for p in self.players.values() if not p.eliminated]
             if len(alive_now) <= 1:
                 winner = alive_now[0].player_id if alive_now else None
-                self._winner_display = f"{winner} WINS!" if winner else "Draw!"
+                if winner:
+                    display_name = self._names.get(winner, winner)
+                    self._winner_display = f"{display_name} WINS!"
+                else:
+                    self._winner_display = "Draw!"
                 self._end_game(winner=winner)
 
         return self.get_state()
