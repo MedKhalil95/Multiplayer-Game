@@ -1811,6 +1811,10 @@ if(window.matchMedia("(pointer:coarse)").matches){
 const canvas = document.getElementById("gameCanvas");
 const ctx    = canvas.getContext("2d");
 
+// ── 500 lbs weight sprite ─────────────────────────────────────────────
+const _weightImg = new Image();
+_weightImg.src = "images/500-ibs.png";
+
 function resizeCanvas(W, H){
   const isFS  = _isFullscreen();
   const isMobile = window.matchMedia("(pointer:coarse)").matches;
@@ -2076,6 +2080,36 @@ function renderTntBattle(s){
     ctx.stroke();
   }
 
+  // ── 500 lbs weight (arena pickup) ──────────────────────────────────
+  if(s.weight){
+    const wt = s.weight;
+    const tick = S.lastState?.tick || 0;
+    const wx = wt.x, wy = wt.y, ws = wt.size;
+    const wcx = wx + ws/2, wcy = wy + ws/2;
+
+    // Danger-red pulsing aura on the ground
+    const pulse = Math.abs(Math.sin(tick * 0.06)) * 0.35 + 0.15;
+    const grad = ctx.createRadialGradient(wcx, wcy, 0, wcx, wcy, ws);
+    grad.addColorStop(0, `rgba(255,60,60,${pulse})`);
+    grad.addColorStop(1, "rgba(255,60,60,0)");
+    ctx.beginPath(); ctx.arc(wcx, wcy, ws, 0, Math.PI*2);
+    ctx.fillStyle = grad; ctx.fill();
+
+    // Weight image
+    if(_weightImg.complete && _weightImg.naturalWidth){
+      ctx.drawImage(_weightImg, wx, wy, ws, ws);
+    } else {
+      // Fallback: simple grey rect until image loads
+      ctx.fillStyle="#666"; ctx.fillRect(wx, wy, ws, ws);
+    }
+
+    // Warning exclamation above it
+    const bounce = Math.sin(tick * 0.1) * 3;
+    ctx.font = "bold 14px sans-serif";
+    ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+    ctx.fillText("⚠️", wcx, wy - 6 + bounce);
+  }
+
   for(const tc of s.thrown_crates||[]){
     ctx.save();
     ctx.translate(tc.x+tc.size/2, tc.y+tc.size/2);
@@ -2130,6 +2164,86 @@ function renderTntBattle(s){
         ctx.globalAlpha=0.75;
         ctx.fillText("👊",p.x+p.size/2,p.y-26);
         ctx.globalAlpha=1;
+      }
+
+      // ── 500 lbs weight above head ──────────────────────────────
+      if(p.has_weight){
+        const HOLD  = 600;  // must match server WEIGHT_HOLD_TICKS
+        const timer = p.weight_timer || 0;
+        const frac  = timer / HOLD;        // 1.0 → just picked up, 0.0 → about to die
+        const tick  = S.lastState?.tick || 0;
+
+        // Weight descends from 80px above head down to 4px above head
+        const maxDrop = 76;
+        const dropY   = p.y - 16 - maxDrop * (1 - frac);   // starts high, comes down
+        const pcx     = p.x + p.size / 2;
+        const ws      = 32;   // weight sprite size when above head
+
+        // Shadow on player grows as weight descends
+        const shadowR  = 14 + (1 - frac) * 10;
+        const shadowA  = 0.15 + (1 - frac) * 0.35;
+        ctx.save();
+        ctx.beginPath();
+        ctx.ellipse(pcx, p.y + p.size - 4, shadowR, shadowR * 0.4, 0, 0, Math.PI*2);
+        ctx.fillStyle = `rgba(0,0,0,${shadowA})`;
+        ctx.fill();
+        ctx.restore();
+
+        // Danger chain / rope connecting weight to player
+        ctx.save();
+        ctx.setLineDash([3, 4]);
+        ctx.strokeStyle = `rgba(255,80,80,${0.3 + (1-frac)*0.5})`;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(pcx, dropY + ws);
+        ctx.lineTo(pcx, p.y - 14);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+
+        // Weight sprite above head
+        ctx.save();
+        // Urgent shake when < 20% time remaining
+        let shakeX = 0;
+        if(frac < 0.2){
+          shakeX = (Math.random()-0.5) * (1 - frac/0.2) * 5;
+        }
+        if(_weightImg.complete && _weightImg.naturalWidth){
+          ctx.drawImage(_weightImg, pcx - ws/2 + shakeX, dropY, ws, ws);
+        } else {
+          ctx.fillStyle="#666";
+          ctx.fillRect(pcx - ws/2 + shakeX, dropY, ws, ws);
+        }
+        ctx.restore();
+
+        // Countdown ring around player
+        const arcFrac = timer / HOLD;
+        const startA  = -Math.PI / 2;
+        const endA    = startA + Math.PI * 2 * arcFrac;
+        const ringR   = p.size / 2 + 7;
+        // background ring
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(pcx, p.y + p.size/2, ringR, 0, Math.PI*2);
+        ctx.strokeStyle = "rgba(80,80,80,0.5)";
+        ctx.lineWidth = 3; ctx.stroke();
+        // foreground ring (colour shifts red as time runs out)
+        const r = Math.round(255);
+        const g = Math.round(200 * frac);
+        ctx.beginPath();
+        ctx.arc(pcx, p.y + p.size/2, ringR, startA, endA);
+        ctx.strokeStyle = `rgb(${r},${g},0)`;
+        ctx.lineWidth = 3; ctx.stroke();
+        ctx.restore();
+
+        // Seconds remaining label
+        const secsLeft = Math.ceil(timer / 60);
+        ctx.save();
+        ctx.font = `bold 11px sans-serif`;
+        ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+        ctx.fillStyle = frac < 0.3 ? "#ff4444" : "#ffcc00";
+        ctx.fillText(`${secsLeft}s`, pcx, p.y - 16);
+        ctx.restore();
       }
     }
     ctx.globalAlpha=1;

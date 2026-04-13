@@ -51,6 +51,12 @@ MAX_FRUITS        = 3           # max fruits on screen at once
 FRUIT_SPAWN_LO    = 180         # ticks (~3 s)
 FRUIT_SPAWN_HI    = 360         # ticks (~6 s)
 
+# ── 500 lbs weight ────────────────────────────────────────────────────
+WEIGHT_SIZE       = 40          # px square (large, imposing)
+WEIGHT_SPAWN_TICK = 900         # tick 900 = 15 s at 60 tps
+WEIGHT_HOLD_TICKS = 720        # 10 s after pickup → holder is eliminated
+WEIGHT_TRANSFER_RANGE = 50      # px – touching an enemy transfers the curse
+
 
 # ── spawn positions (mirrors original Player.__init__) ────────────────
 
@@ -80,6 +86,8 @@ class TNTPlayer:
         self.last_move_x  = 0.0
         self.last_move_y  = -1.0        # default throw direction: upward
         self.melee_cooldown = 0         # ticks until next punch is allowed
+        self.has_weight     = False     # True while cursed by 500 lbs
+        self.weight_timer   = 0         # ticks remaining before elimination
 
     @property
     def cx(self): return self.x + self.size / 2
@@ -108,6 +116,8 @@ class TNTPlayer:
             "stunned":    self.stun > 0,
             "held_crate": self.held_crate,
             "melee_ready": self.melee_cooldown <= 0,
+            "has_weight":  self.has_weight,
+            "weight_timer": self.weight_timer,
         }
 
 
@@ -255,6 +265,30 @@ class HealthFruit:
         }
 
 
+class WeightItem:
+    """
+    The 500 lbs weight.  Spawns at arena centre first at WEIGHT_SPAWN_TICK,
+    then respawns automatically once the current curse resolves (player
+    crushed or… the curse clears) after another WEIGHT_SPAWN_TICK delay.
+    Walking over it curses the player: after WEIGHT_HOLD_TICKS that player
+    is instantly eliminated unless they transferred the curse by touching an
+    enemy (who then inherits the remaining timer).
+    """
+
+    def __init__(self, x: float, y: float):
+        self.x    = x
+        self.y    = y
+        self.size = WEIGHT_SIZE
+        self.active = True   # False once someone picks it up
+
+    def to_dict(self) -> dict:
+        return {
+            "x":    round(self.x, 1),
+            "y":    round(self.y, 1),
+            "size": self.size,
+        }
+
+
 # ── main game ─────────────────────────────────────────────────────────
 
 class TnTBattleGame(BaseHeadlessGame):
@@ -301,6 +335,10 @@ class TnTBattleGame(BaseHeadlessGame):
         self.health_fruits  = []
         self.hit_events     = []
 
+        # 500 lbs weight – respawns continuously
+        self.weight: WeightItem | None = None
+        self._weight_respawn_timer = WEIGHT_SPAWN_TICK  # first spawn at 15 s
+
         # Start with a short timer so first crates appear soon
         self.crate_spawn_timer = 60
         self.fruit_spawn_timer = 240   # first fruit after ~4 s
@@ -330,7 +368,18 @@ class TnTBattleGame(BaseHeadlessGame):
             self._try_spawn_fruit(alive, W, H)
             self.fruit_spawn_timer = random.randint(FRUIT_SPAWN_LO, FRUIT_SPAWN_HI)
 
+        # 1c. Spawn 500 lbs weight (respawns when no curse is active) --------
+        # Only tick the respawn timer when nobody is cursed and weight is off the ground
+        anyone_cursed = any(p.has_weight for p in self.players.values())
+        if not anyone_cursed and not (self.weight and self.weight.active):
+            self._weight_respawn_timer -= 1
+            if self._weight_respawn_timer <= 0:
+                self.weight = WeightItem(float(W // 2 - WEIGHT_SIZE // 2),
+                                         float(H // 2 - WEIGHT_SIZE // 2))
+                self._weight_respawn_timer = WEIGHT_SPAWN_TICK  # reset for next cycle
+
         # 2. Move players + pickup / throw logic ------------------------
+        weight_just_received = set()   # player_ids that got the weight this tick
         for p in alive:
             inp = inputs.get(p.player_id, InputState.neutral(p.player_id))
             self._move_player(p, inp, W, H)
@@ -363,6 +412,39 @@ class TnTBattleGame(BaseHeadlessGame):
             elif not p.held_crate and inp.action and p.stun <= 0 and p.melee_cooldown <= 0:
                 self._melee_punch(p, alive)
 
+            # ── 500 lbs weight pickup ────────────────────────────────
+            if (self.weight and self.weight.active and
+                    self.rects_overlap(p.x, p.y, p.size, p.size,
+                                       self.weight.x, self.weight.y,
+                                       self.weight.size, self.weight.size)):
+                p.has_weight    = True
+                p.weight_timer  = WEIGHT_HOLD_TICKS
+                self.weight.active = False   # remove from arena
+
+            # ── 500 lbs transfer (touching an enemy while cursed) ────
+            if p.has_weight and p.player_id not in weight_just_received:
+                for enemy in alive:
+                    if enemy.player_id == p.player_id or enemy.has_weight:
+                        continue
+                    # Team mode: don't transfer to teammates
+                    if (self.teams and
+                            self.player_team.get(enemy.player_id) ==
+                            self.player_team.get(p.player_id)):
+                        continue
+                    if math.hypot(p.cx - enemy.cx, p.cy - enemy.cy) < WEIGHT_TRANSFER_RANGE:
+                        remaining                  = p.weight_timer
+                        p.has_weight               = False
+                        p.weight_timer             = 0
+                        enemy.has_weight           = True
+                        enemy.weight_timer         = remaining
+                        weight_just_received.add(enemy.player_id)
+                        self.hit_events.append({
+                            "weight_transfer": True,
+                            "from": p.player_id,
+                            "to":   enemy.player_id,
+                        })
+                        break
+
         # 2b. Resolve player–player solid body collisions ---------------
         # Run a few iterations so multi-player pile-ups fully separate.
         for _ in range(3):
@@ -374,6 +456,21 @@ class TnTBattleGame(BaseHeadlessGame):
         for p in alive:
             if p.melee_cooldown > 0:
                 p.melee_cooldown -= 1
+
+        # tick 500 lbs weight countdown ------------------------------------
+        for p in alive:
+            if p.has_weight:
+                p.weight_timer -= 1
+                if p.weight_timer <= 0:
+                    p.has_weight   = False
+                    p.weight_timer = 0
+                    p.hp           = 0
+                    p.eliminated   = True
+                    self.hit_events.append({
+                        "weight_crushed": True,
+                        "target_id":      p.player_id,
+                        "x": p.cx, "y": p.cy,
+                    })
 
         # 3. Update thrown crates + hit detection ----------------------
         for tc in self.thrown_crates[:]:
@@ -607,6 +704,7 @@ class TnTBattleGame(BaseHeadlessGame):
             "explosions":     [e.to_dict() for e in self.explosions],
             "health_fruits":  [f.to_dict() for f in self.health_fruits],
             "hit_events":     self.hit_events,
+            "weight":         self.weight.to_dict() if (self.weight and self.weight.active) else None,
             "game_over":      self._over,
             "winner":         self._winner,
             "winner_display": self._winner_display,
