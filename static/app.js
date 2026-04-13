@@ -1230,7 +1230,7 @@ const ctx    = canvas.getContext("2d");
 
 // ── 500 lbs weight sprite ─────────────────────────────────────────────
 const _weightImg = new Image();
-_weightImg.src = "500-ibs.png";
+_weightImg.src = "sounds/500-ibs.png";
 
 function resizeCanvas(W, H){
   const isFS     = _isFullscreen();
