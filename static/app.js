@@ -1230,27 +1230,29 @@ const ctx    = canvas.getContext("2d");
 
 // ── 500 lbs weight sprite ─────────────────────────────────────────────
 const _weightImg = new Image();
-_weightImg.src = "images/500-ibs.png";
+_weightImg.src = "500-ibs.png";
 
 function resizeCanvas(W, H){
   const isFS     = _isFullscreen();
   const isMobile = window.matchMedia("(pointer:coarse)").matches;
 
-  // Use clientWidth (excludes scrollbar, ignores pinch-zoom artifacts) as the
-  // most reliable viewport width on Android/iOS. Fall back to vv/innerWidth.
-  const vvW = window.visualViewport
-    ? Math.round(window.visualViewport.width)
-    : window.innerWidth;
-  const vvH = window.visualViewport
-    ? Math.round(window.visualViewport.height)
-    : window.innerHeight;
-  // document.documentElement.clientWidth is unaffected by browser chrome / URL bar
-  const bodyW = document.documentElement.clientWidth || vvW;
+  // Use visualViewport as primary source on mobile (most reliable for accounting for URL bar, etc.)
+  let vvW, vvH;
+  
+  if(window.visualViewport){
+    vvW = Math.round(window.visualViewport.width);
+    vvH = Math.round(window.visualViewport.height);
+  } else {
+    vvW = window.innerWidth;
+    vvH = window.innerHeight;
+  }
+
+  // On mobile, use the visual viewport directly for maximum space
+  const bodyW = isMobile ? vvW : (document.documentElement.clientWidth || vvW);
 
   const hudEl = document.querySelector(".game-hud");
   const mobEl = document.getElementById("mobileControls");
 
-  // getBoundingClientRect is more reliable than offsetHeight for freshly-laid-out elements
   const hudH = hudEl ? Math.ceil(hudEl.getBoundingClientRect().height) || 44 : 44;
   const mobH = (mobEl && mobEl.style.display !== "none")
     ? Math.ceil(mobEl.getBoundingClientRect().height) || 0
@@ -1258,20 +1260,23 @@ function resizeCanvas(W, H){
 
   const usedH = hudH + mobH;
 
-  // Width: on mobile allow full body width; on desktop cap at 800px
-  const mxW = isFS ? vvW : (isMobile ? bodyW : Math.min(bodyW, 800));
+  // Width: use full available width on mobile
+  const mxW = isFS ? vvW : (isMobile ? vvW : Math.min(bodyW, 800));
+  
+  // Height: maximize usage on mobile (no extra padding), use remaining space
   const pad = isFS ? 0 : (isMobile ? 0 : 8);
   const mxH = Math.max(vvH - usedH - pad, 80);
 
+  // Calculate scale to fit within available space while maintaining aspect ratio
   const sc = Math.min(mxW / W, mxH / H);
 
+  // Apply the calculated dimensions
   canvas.style.width  = Math.floor(W * sc) + "px";
   canvas.style.height = Math.floor(H * sc) + "px";
-  canvas.width  = W;
-  canvas.height = H;
+  canvas.width  = W;   // internal resolution
+  canvas.height = H;   // internal resolution
   canvas._scale = sc;
 }
-
 const _fsSupported = !!(
   document.documentElement.requestFullscreen ||
   document.documentElement.webkitRequestFullscreen ||
