@@ -127,23 +127,57 @@ input[type=text]:focus,select:focus{border-color:var(--acc)}
 @keyframes pulse{from{opacity:1}to{opacity:.35}}
 
 /* game screen */
-#gameScreen{padding:0;background:#0a0a10;justify-content:flex-start}
-/* On mobile the game screen should fill the full viewport height */
-@media (max-width:600px){
-  #gameScreen{min-height:100dvh;min-height:100vh}
+/* game screen */
+#gameScreen{
+  padding:0;
+  background:#0a0a10;
+  justify-content:flex-start;
 }
-#gameCanvas{display:block;max-width:100vw;touch-action:none}
-.game-hud{width:100%;max-width:800px;display:flex;align-items:center;
-          justify-content:space-between;padding:7px 12px;background:var(--surf)}
-/* On mobile, allow canvas to use full viewport width */
+
+/* On mobile - use full available height */
 @media (max-width:600px){
-  #gameCanvas{width:100% !important;max-width:100% !important}
+  #gameScreen{
+    min-height:100dvh;
+    min-height:100vh;
+    width: 100vw;
+    overflow: hidden;
+  }
 }
-@media (max-width:480px){
-  .game-hud{padding:5px 8px}
-  .hud-player{font-size:.82rem}
-  .hud-players{gap:7px}
-  .hud-score{font-size:.88rem}
+
+#gameCanvas{
+  display:block;
+  max-width:100vw;
+  touch-action:none;
+  flex-shrink:0;
+}
+
+.game-hud{
+  width:100%;
+  max-width:100%;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:7px 12px;
+  background:var(--surf);
+  flex-shrink:0;
+}
+
+/* Mobile controls */
+@media (max-width:600px){
+  #gameCanvas{
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+  .game-hud{
+    padding: 6px 8px;
+  }
+}
+
+/* Very small phones */
+@media (max-width:360px){
+  .game-hud{
+    padding: 4px 6px;
+  }
 }
 .hud-players{display:flex;gap:10px;flex-wrap:wrap}
 .hud-player{display:flex;align-items:center;gap:5px;font-size:.82rem}
