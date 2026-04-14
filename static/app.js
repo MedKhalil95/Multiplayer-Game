@@ -787,29 +787,47 @@ const _cdVoice = {
     if(!this._synth) return;
     const voices = this._synth.getVoices();
     if(!voices.length) return;
-    
+
+    // Determine the user's preferred language from the browser
+    // navigator.languages gives the full ordered list (e.g. ["ar", "fr-FR", "en-US"])
+    const userLangs = (navigator.languages && navigator.languages.length)
+      ? navigator.languages
+      : [navigator.language || "en"];
+
+    console.log("[Voice] User languages:", userLangs.join(", "));
     console.log("[Voice] Available voices:", voices.map(v => v.name + " (" + v.lang + ")").join(", "));
-    
-    // Priority 1: Find an explicit male English voice
-    let picked = voices.find(v => /^en/i.test(v.lang) && this._isMale(v));
-    
-    // Priority 2: Any voice with "male" in the name (any language)
-    if(!picked){
-      picked = voices.find(v => v.name.toLowerCase().includes("male"));
+
+    let picked = null;
+
+    // Try each user language in preference order
+    for(const lang of userLangs){
+      const base = lang.split("-")[0].toLowerCase(); // e.g. "ar" from "ar-SA"
+
+      // Priority 1: Exact language + male voice
+      picked = voices.find(v => v.lang.toLowerCase().startsWith(base) && this._isMale(v));
+      if(picked) break;
+
+      // Priority 2: Exact language, any voice
+      picked = voices.find(v => v.lang.toLowerCase().startsWith(base));
+      if(picked) break;
     }
-    
-    // Priority 3: Any English voice (fallback - will use low pitch)
+
+    // Priority 3: Any male voice (any language)
     if(!picked){
-      picked = voices.find(v => /^en/i.test(v.lang));
+      picked = voices.find(v => this._isMale(v));
     }
-    
+
     // Priority 4: First available voice
     if(!picked && voices.length){
       picked = voices[0];
     }
-    
+
     this._voice = picked;
-    console.log("[Voice] Selected:", this._voice ? this._voice.name : "NONE", 
+    // Store the resolved language tag so _fire() uses it for the utterance
+    this._lang  = picked ? picked.lang : (userLangs[0] || "en-US");
+
+    console.log("[Voice] Selected:", this._voice ? this._voice.name : "NONE",
+                "| Lang:", this._lang,
                 "| Is male:", this._voice ? this._isMale(this._voice) : false);
   },
 
@@ -847,18 +865,17 @@ const _cdVoice = {
   _fire(text, { pitch = 1, rate = 0.85, volume = 1 } = {}){
     this._synth.cancel();
     const u = new SpeechSynthesisUtterance(text);
-    
-    // Use the selected voice (preferring male if found)
+
+    // Use the selected voice (language-aware, preferring male if found)
     if(this._voice) u.voice = this._voice;
-    
-    // Force a deep, masculine pitch regardless of which voice was selected
-    // Lower pitch = deeper voice (0.4-0.6 sounds most masculine)
-    // Even if we got a female voice, this makes it sound male
-    u.pitch  = 0.5;   // Deep, masculine pitch
+
+    // Deep, masculine pitch regardless of which voice was selected
+    u.pitch  = 0.5;
     u.rate   = rate;
     u.volume = volume;
-    u.lang   = "en-US";
-    
+    // Use the voice's own language tag so the TTS engine pronounces correctly
+    u.lang   = this._lang || (this._voice ? this._voice.lang : "en-US");
+
     this._synth.speak(u);
   }
 };
@@ -938,7 +955,8 @@ function _speakGameOver(state){
       _cdVoice._synth.cancel();
       const u = new SpeechSynthesisUtterance(phrase);
       if(_cdVoice._voice) u.voice = _cdVoice._voice;
-      u.pitch = 0.5; u.rate = 0.82; u.volume = 1; u.lang = "en-US";
+      u.pitch = 0.5; u.rate = 0.82; u.volume = 1;
+      u.lang  = _cdVoice._lang || (_cdVoice._voice ? _cdVoice._voice.lang : "en-US");
       u.onend = () => _playCortexLaughTwice();
       _cdVoice._synth.speak(u);
       return;
@@ -954,7 +972,8 @@ function _speakGameOver(state){
     _cdVoice._synth.cancel();
     const u = new SpeechSynthesisUtterance(phrase);
     if(_cdVoice._voice) u.voice = _cdVoice._voice;
-    u.pitch = 0.5; u.rate = 0.82; u.volume = 1; u.lang = "en-US";
+    u.pitch = 0.5; u.rate = 0.82; u.volume = 1;
+    u.lang  = _cdVoice._lang || (_cdVoice._voice ? _cdVoice._voice.lang : "en-US");
     u.onend = () => _playCortexLaughTwice();
     _cdVoice._synth.speak(u);
   }, 400);

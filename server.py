@@ -52,7 +52,7 @@ PLAYER_COLOR_PALETTE = [
     "#DC50DC", "#50DCDC", "#FF8C00", "#A0A0FF",
 ]
 
-BOT_NAMES = ["Ahmed", "Anass", "Taym", "Larin", "Meria", "Youssef", "Salah"]
+BOT_NAMES = ["Cortex", "Crash", "Dingodile", "Brio", "Tiny", "Cong"]
 
 def _pick_bot_name(exclude: set = None) -> str:
     """Pick a random bot name, avoiding already-used names when possible."""
