@@ -118,236 +118,72 @@ input[type=text]:focus,select:focus{border-color:var(--acc)}
 .wait-slot.slot-displaceable{cursor:pointer}
 .wait-slot.slot-displaceable:hover{border-color:#c07820;background:rgba(192,120,32,.10)}
 .btn-move{background:none;border:1.5px solid var(--acc);color:var(--acc);border-radius:5px;
-          padding:2px 9px;font-size:.72rem;cursor:pointer;white-space:nowrap}
+          font-size:.74rem;padding:4px 9px;cursor:pointer;transition:.12s;white-space:nowrap}
 .btn-move:hover{background:var(--acc);color:#000}
-.wait-name{flex:1;font-size:.9rem}
-.wait-status{font-size:.78rem;color:var(--muted)}
-.countdown{font-size:3rem;font-weight:900;color:var(--acc);
-           text-align:center;margin:14px 0;animation:pulse .5s infinite alternate}
-@keyframes pulse{from{opacity:1}to{opacity:.35}}
 
 /* game screen */
-/* game screen */
-#gameScreen{
-  padding:0;
-  background:#0a0a10;
-  justify-content:flex-start;
-}
+.game-hud{width:100%;max-width:800px;display:flex;align-items:center;
+          justify-content:space-between;padding:8px 4px;gap:8px;flex-shrink:0}
+.hud-players{display:flex;flex-wrap:wrap;gap:6px;flex:1}
+.hud-player{display:flex;align-items:center;gap:5px;font-size:.8rem;padding:3px 7px;
+            background:var(--surf);border-radius:7px;border:1.5px solid var(--border)}
+.hud-player.hud-elim{opacity:.4;text-decoration:line-through}
+.hud-color{width:12px;height:12px;border-radius:3px;flex-shrink:0}
+.hud-score{font-weight:700;color:var(--acc);margin-left:3px}
+.hud-bot{font-size:.65rem;color:var(--muted);margin-left:2px}
 
-/* On mobile - use full available height */
-@media (max-width:600px){
-  #gameScreen{
-    min-height:100dvh;
-    min-height:100vh;
-    width: 100vw;
-    overflow: hidden;
-  }
-}
+#gameCanvas{display:block;max-width:100%;border-radius:12px;
+            box-shadow:0 8px 40px rgba(0,0,0,.6)}
 
-#gameCanvas{
-  display:block;
-  max-width:100vw;
-  touch-action:none;
-  flex-shrink:0;
-}
-
-.game-hud{
-  width:100%;
-  max-width:100%;
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  padding:7px 12px;
-  background:var(--surf);
-  flex-shrink:0;
-}
-
-/* Mobile controls */
-@media (max-width:600px){
-  #gameCanvas{
-    width: 100% !important;
-    max-width: 100% !important;
-  }
-  .game-hud{
-    padding: 6px 8px;
-  }
-}
-
-/* Very small phones */
-@media (max-width:360px){
-  .game-hud{
-    padding: 4px 6px;
-  }
-}
-#gameCanvas{
-  display:block;
-  max-width:100vw;
-  touch-action:none;
-  flex-shrink:0;
-}
-
-.game-hud{
-  width:100%;
-  max-width:100%;
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  padding:7px 12px;
-  background:var(--surf);
-  flex-shrink:0;
-}
-
-/* Mobile controls */
-@media (max-width:600px){
-  #gameCanvas{
-    width: 100% !important;
-    max-width: 100% !important;
-  }
-  .game-hud{
-    padding: 6px 8px;
-  }
-}
-
-/* Very small phones */
-@media (max-width:360px){
-  .game-hud{
-    padding: 4px 6px;
-  }
-}
-.hud-players{display:flex;gap:10px;flex-wrap:wrap}
-.hud-player{display:flex;align-items:center;gap:5px;font-size:.82rem}
-.hud-color{width:9px;height:9px;border-radius:2px}
-.hud-score{font-weight:700}
-.hud-elim{opacity:.3;text-decoration:line-through}
-.hud-bot{font-size:.68rem;color:var(--muted)}
-
-/* fullscreen button – large enough to tap on mobile (44px min) */
-.fs-btn{background:rgba(255,255,255,.06);border:1.5px solid var(--border);
-        color:var(--muted);border-radius:8px;
-        width:40px;height:40px;display:flex;align-items:center;justify-content:center;
-        cursor:pointer;flex-shrink:0;transition:border-color .15s,background .15s;
-        -webkit-tap-highlight-color:transparent;touch-action:manipulation}
-.fs-btn:hover,.fs-btn:active{border-color:var(--acc);background:rgba(108,99,255,.18);color:var(--text)}
-.fs-btn svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
-
-/* ── Real fullscreen (Chrome/Firefox/Android) ── */
-:fullscreen      #gameScreen,
-:-webkit-full-screen #gameScreen,
-:-moz-full-screen    #gameScreen{
-  display:flex;flex-direction:column;
-  width:100vw;height:100dvh;background:#0a0a10;overflow:hidden}
-
-:fullscreen      .game-hud,
-:-webkit-full-screen .game-hud,
-:-moz-full-screen    .game-hud{max-width:100%;width:100%}
-
-:fullscreen      #gameCanvas,
-:-webkit-full-screen #gameCanvas,
-:-moz-full-screen    #gameCanvas{
-  flex:1;width:100% !important;height:0 !important;
-  max-width:100vw !important;max-height:none !important}
-
-:fullscreen      .mobile-controls,
-:-webkit-full-screen .mobile-controls,
-:-moz-full-screen    .mobile-controls{max-width:100%}
-
-/* ── Fake fullscreen fallback (iOS Safari) ──
-   Applied via JS class .fake-fs on #gameScreen when API is unavailable */
-#gameScreen.fake-fs{
-  position:fixed;inset:0;z-index:999;
-  display:flex;flex-direction:column;
-  width:100vw;height:100dvh;background:#0a0a10;overflow:hidden}
-#gameScreen.fake-fs .game-hud{max-width:100%;width:100%}
-#gameScreen.fake-fs #gameCanvas{
-  flex:1;width:100% !important;height:0 !important;
-  max-width:100vw !important;max-height:none !important}
-#gameScreen.fake-fs .mobile-controls{max-width:100%}
-/* hide body scroll while fake-fs is active */
-body.fs-open{overflow:hidden;position:fixed;width:100%}
+/* fullscreen button */
+.fs-btn{background:var(--surf);border:1.5px solid var(--border);border-radius:8px;
+        padding:6px;cursor:pointer;display:flex;align-items:center;transition:.15s}
+.fs-btn:hover{border-color:var(--acc)}
+.fs-btn svg{width:20px;height:20px;stroke:var(--muted);stroke-width:2;fill:none;
+            stroke-linecap:round;stroke-linejoin:round;transition:.15s}
+.fs-btn:hover svg{stroke:var(--text)}
 
 /* mobile controls */
-.mobile-controls{width:100%;max-width:800px;display:flex;
-                 justify-content:space-between;align-items:center;
-                 padding:8px 16px;gap:12px;user-select:none;flex-shrink:0}
+.mobile-controls{display:none}
+@media(pointer:coarse){.mobile-controls{display:flex;align-items:center;
+  justify-content:space-between;width:100%;max-width:800px;padding:10px 8px;gap:16px}}
+.ctrl-wrap{position:relative;width:160px;height:160px}
+.joystick-zone{position:absolute;inset:0;border-radius:50%;
+               background:rgba(255,255,255,.06);border:2px solid rgba(255,255,255,.1);
+               touch-action:none;cursor:grab}
+.joystick-knob{position:absolute;top:50%;left:50%;width:60px;height:60px;
+               border-radius:50%;background:var(--acc);opacity:.8;
+               transform:translate(-50%,-50%);pointer-events:none;
+               box-shadow:0 2px 12px rgba(108,99,255,.5)}
+.joy-arrow{position:absolute;width:20px;height:20px;display:flex;
+           align-items:center;justify-content:center;font-size:1rem;
+           opacity:.3;transition:opacity .1s;pointer-events:none}
+.joy-arrow.lit{opacity:1}
+.joy-arrow.up{top:6px;left:50%;transform:translateX(-50%)}
+.joy-arrow.dn{bottom:6px;left:50%;transform:translateX(-50%)}
+.joy-arrow.lt{left:6px;top:50%;transform:translateY(-50%)}
+.joy-arrow.rt{right:6px;top:50%;transform:translateY(-50%)}
+.joy-arrow.up::after{content:"▲"}
+.joy-arrow.dn::after{content:"▼"}
+.joy-arrow.lt::after{content:"◀"}
+.joy-arrow.rt::after{content:"▶"}
 
-/* ── On small phones: scale up controls so they're easier to tap ── */
-@media (max-width:480px){
-  .mobile-controls{padding:6px 14px;gap:10px}
-  .joystick-zone{width:172px;height:172px}
-  .joystick-knob{width:68px;height:68px}
-  .dpad{width:172px;height:172px}
-  .dpad-btn{width:56px;height:56px;font-size:1.5rem}
-  .action-btn{width:96px;height:96px;font-size:2rem}
-}
-/* ── Very small phones (≤360px) ── */
-@media (max-width:360px){
-  .joystick-zone{width:152px;height:152px}
-  .joystick-knob{width:60px;height:60px}
-  .dpad{width:152px;height:152px}
-  .dpad-btn{width:50px;height:50px;font-size:1.3rem}
-  .action-btn{width:86px;height:86px;font-size:1.8rem}
-}
-
-/* ── joystick ── */
-.joystick-zone{
-  width:148px;height:148px;border-radius:50%;
-  background:rgba(255,255,255,.055);border:2px solid rgba(255,255,255,.14);
-  position:relative;flex-shrink:0;
-  touch-action:none;-webkit-tap-highlight-color:transparent;
-}
-.joystick-knob{
-  width:58px;height:58px;border-radius:50%;
-  background:radial-gradient(circle at 35% 35%,#9a94ff,#4a44cc);
-  border:2px solid rgba(255,255,255,.4);
-  box-shadow:0 4px 18px rgba(0,0,0,.55);
-  position:absolute;top:50%;left:50%;
-  transform:translate(-50%,-50%);
-  pointer-events:none;
-}
-/* cardinal arrow indicators */
-.joystick-zone .joy-arrow{
-  position:absolute;pointer-events:none;width:0;height:0;opacity:.28;transition:opacity .07s;
-}
-.joystick-zone .joy-arrow.lit{opacity:.95}
-.joy-arrow.up{border-left:8px solid transparent;border-right:8px solid transparent;
-  border-bottom:13px solid #fff;top:8px;left:50%;transform:translateX(-50%)}
-.joy-arrow.dn{border-left:8px solid transparent;border-right:8px solid transparent;
-  border-top:13px solid #fff;bottom:8px;left:50%;transform:translateX(-50%)}
-.joy-arrow.lt{border-top:8px solid transparent;border-bottom:8px solid transparent;
-  border-right:13px solid #fff;left:8px;top:50%;transform:translateY(-50%)}
-.joy-arrow.rt{border-top:8px solid transparent;border-bottom:8px solid transparent;
-  border-left:13px solid #fff;right:8px;top:50%;transform:translateY(-50%)}
-
-/* ── D-pad (alternative mode) ── */
-.dpad{
-  display:none;position:relative;width:148px;height:148px;flex-shrink:0;
-  touch-action:none;-webkit-tap-highlight-color:transparent;
-}
-.dpad-btn{
-  position:absolute;width:48px;height:48px;border-radius:9px;
-  background:rgba(255,255,255,.10);border:2px solid rgba(255,255,255,.18);
-  display:flex;align-items:center;justify-content:center;
-  font-size:1.25rem;cursor:pointer;user-select:none;
-  -webkit-tap-highlight-color:transparent;transition:background .06s,border-color .06s;
-}
-.dpad-btn.pressed{background:rgba(108,99,255,.55);border-color:var(--acc)}
-.dpad-btn.up  {top:0;   left:50%;transform:translateX(-50%)}
-.dpad-btn.dn  {bottom:0;left:50%;transform:translateX(-50%)}
-.dpad-btn.lt  {left:0;  top:50%; transform:translateY(-50%)}
-.dpad-btn.rt  {right:0; top:50%; transform:translateY(-50%)}
-.dpad-center{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
-  width:34px;height:34px;border-radius:50%;
-  background:rgba(255,255,255,.06);border:1.5px solid rgba(255,255,255,.1)}
-
-/* toggle button sits below the control widget */
-.ctrl-wrap{position:relative;flex-shrink:0;padding-bottom:22px}
-.ctrl-toggle{
-  position:absolute;bottom:0;left:50%;transform:translateX(-50%);
-  font-size:.62rem;color:var(--muted);cursor:pointer;white-space:nowrap;
-  background:none;border:none;padding:2px 8px;text-decoration:underline dotted;
-  -webkit-tap-highlight-color:transparent;
-}
-
+.dpad{position:absolute;inset:0;display:none;
+      display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr)}
+.dpad-btn{display:flex;align-items:center;justify-content:center;
+          font-size:1.2rem;cursor:pointer;border-radius:6px;
+          background:rgba(255,255,255,.06);border:1.5px solid rgba(255,255,255,.1);
+          transition:.1s;-webkit-tap-highlight-color:transparent;
+          user-select:none}
+.dpad-btn:active,.dpad-btn.pressed{background:var(--acc);border-color:var(--acc)}
+.dpad-btn.up{grid-column:2;grid-row:1}
+.dpad-btn.dn{grid-column:2;grid-row:3}
+.dpad-btn.lt{grid-column:1;grid-row:2}
+.dpad-btn.rt{grid-column:3;grid-row:2}
+.dpad-center{grid-column:2;grid-row:2;background:rgba(255,255,255,.03);border-radius:6px}
+.ctrl-toggle{position:absolute;bottom:-26px;left:50%;transform:translateX(-50%);
+             background:none;border:none;color:var(--muted);font-size:.7rem;
+             cursor:pointer;white-space:nowrap}
 .action-btn{width:80px;height:80px;border-radius:50%;background:var(--acc2);
             border:2px solid rgba(255,255,255,.25);color:#fff;font-size:1.6rem;
             cursor:pointer;font-weight:800;flex-shrink:0;
@@ -388,7 +224,7 @@ body.fs-open{overflow:hidden;position:fixed;width:100%}
 .score-table td{padding:7px 11px;font-size:.88rem}
 .score-table tr:not(:last-child) td{border-bottom:1px solid var(--border)}
 
-/* key config */
+/* key config (legacy online screen) */
 .key-config{width:100%;max-width:480px}
 .key-row{display:flex;align-items:center;justify-content:space-between;
          padding:9px 0;border-bottom:1px solid var(--border);font-size:.88rem}
@@ -416,6 +252,565 @@ hr{border:none;border-top:1px solid var(--border);width:100%;margin:18px 0}
               border:2.5px solid transparent;transition:.15s;flex-shrink:0}
 .color-swatch:hover{transform:scale(1.15)}
 .color-swatch.selected{border-color:#fff;outline:2px solid var(--acc);outline-offset:1px}
+
+/* ═══════════════════════════════════════════════════════
+   MODE SELECT SCREEN
+═══════════════════════════════════════════════════════ */
+#modeScreen { justify-content: center; }
+.mode-cards {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin: 28px 0;
+  width: 100%;
+  max-width: 640px;
+}
+.mode-card {
+  background: var(--surf);
+  border: 2.5px solid var(--border);
+  border-radius: 20px;
+  padding: 34px 28px;
+  cursor: pointer;
+  flex: 1;
+  min-width: 230px;
+  max-width: 290px;
+  text-align: center;
+  transition: .2s;
+  user-select: none;
+}
+.mode-card:hover { border-color: var(--acc); transform: translateY(-4px); box-shadow: 0 10px 34px rgba(108,99,255,.2); }
+.mode-card .mode-icon { font-size: 3.2rem; margin-bottom: 14px; }
+.mode-card h2 { font-size: 1.2rem; margin-bottom: 8px; }
+.mode-card p  { color: var(--muted); font-size: .82rem; line-height: 1.65; }
+.mode-features { list-style: none; margin: 12px 0 0; padding: 0; text-align: left; }
+.mode-features li { color: var(--muted); font-size: .78rem; padding: 3px 0; }
+.mode-features li::before { content: "• "; color: var(--acc); }
+
+/* ═══════════════════════════════════════════════════════
+   LOCAL LOBBY SCREEN
+═══════════════════════════════════════════════════════ */
+.local-players-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  max-width: 520px;
+  margin: 16px 0;
+}
+.local-player-row {
+  background: var(--surf);
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.local-player-row.active { border-color: var(--acc); }
+.local-player-row.bot-row { border-color: #a06428; background: #16130a; opacity: .8; }
+.lpr-num { font-size: 1.3rem; font-weight: 800; width: 26px; text-align: center; flex-shrink: 0; }
+.lpr-info { flex: 1; min-width: 0; }
+.lpr-name { font-size: .9rem; font-weight: 600; }
+.lpr-keys { color: var(--muted); font-size: .73rem; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lpr-gp   { color: #50C864; font-size: .73rem; margin-top: 1px; }
+.lpr-config-btn {
+  padding: 6px 13px;
+  background: none;
+  border: 1.5px solid var(--acc);
+  color: var(--acc);
+  border-radius: 7px;
+  font-size: .8rem;
+  cursor: pointer;
+  transition: .15s;
+  flex-shrink: 0;
+}
+.lpr-config-btn:hover { background: var(--acc); color: #fff; }
+
+.local-count-row {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  max-width: 520px;
+  margin-bottom: 8px;
+}
+.local-count-btn {
+  flex: 1;
+  padding: 12px 0;
+  background: var(--surf);
+  border: 2px solid var(--border);
+  color: var(--muted);
+  border-radius: 10px;
+  font-size: 1.1rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: .15s;
+}
+.local-count-btn:hover { border-color: var(--muted); }
+.local-count-btn.active { border-color: var(--acc); background: #1a1a30; color: var(--text); }
+
+/* ═══════════════════════════════════════════════════════
+   LOCAL LOBBY – name input & colour swatches
+═══════════════════════════════════════════════════════ */
+.lpr-name-input {
+  background: transparent;
+  border: none;
+  border-bottom: 1.5px solid var(--border);
+  color: var(--text);
+  font-size: .93rem;
+  font-weight: 600;
+  padding: 2px 4px;
+  width: 100%;
+  max-width: 160px;
+  outline: none;
+  transition: border-color .15s;
+}
+.lpr-name-input:focus { border-bottom-color: var(--acc); }
+
+.lpr-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 5px 0 3px;
+}
+.lpr-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: transform .12s, border-color .12s;
+  flex-shrink: 0;
+}
+.lpr-swatch:hover  { transform: scale(1.2); }
+.lpr-swatch.sel    { border-color: #fff; transform: scale(1.15); }
+
+.lpr-team-badge {
+  font-size: .72rem;
+  font-weight: 700;
+  margin-top: 3px;
+  display: block;
+}
+
+/* Team mode toggle */
+.local-team-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--surf);
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 16px;
+  cursor: pointer;
+  width: 100%;
+  max-width: 520px;
+  transition: border-color .15s;
+}
+.local-team-row:hover { border-color: var(--acc); }
+.local-team-row input[type=checkbox] { accent-color: var(--acc); width: 17px; height: 17px; cursor: pointer; }
+.local-team-label { flex: 1; }
+.local-team-label strong { display: block; font-size: .92rem; }
+.local-team-label span   { color: var(--muted); font-size: .78rem; }
+
+/* ═══════════════════════════════════════════════════════
+   CONTROLS CONFIG MODAL
+═══════════════════════════════════════════════════════ */
+.ctrl-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.8);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.ctrl-modal {
+  background: #1a1a2e;
+  border: 2px solid var(--border);
+  border-radius: 18px;
+  padding: 24px 28px;
+  width: 100%;
+  max-width: 440px;
+  max-height: 92vh;
+  overflow-y: auto;
+}
+.ctrl-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+.ctrl-modal-title { font-size: 1rem; font-weight: 700; }
+.ctrl-close {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+.ctrl-close:hover { background: var(--border); color: var(--text); }
+.ctrl-section-label {
+  font-size: .7rem;
+  font-weight: 700;
+  letter-spacing: .1em;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+.ctrl-key-rows { display: flex; flex-direction: column; gap: 8px; }
+.ctrl-key-row  { display: flex; align-items: center; gap: 10px; }
+.ctrl-key-label { flex: 1; font-size: .88rem; }
+.ctrl-key-badge {
+  padding: 7px 14px;
+  background: var(--surf);
+  border: 1.5px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  font-size: .85rem;
+  font-family: monospace;
+  cursor: pointer;
+  min-width: 90px;
+  text-align: center;
+  transition: .15s;
+}
+.ctrl-key-badge:hover { border-color: var(--acc); }
+.ctrl-key-badge.listening { border-color: var(--acc2); color: var(--acc2); animation: blink .6s steps(1) infinite; }
+@keyframes blink { 50% { opacity:.4; } }
+.ctrl-gamepad-area { margin-top: 6px; }
+.ctrl-no-gp { color: var(--muted); font-size: .82rem; font-style: italic; }
+.ctrl-gp-list { display: flex; flex-direction: column; gap: 7px; }
+.ctrl-gp-option {
+  background: var(--surf);
+  border: 1.5px solid var(--border);
+  border-radius: 9px;
+  padding: 11px 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transition: .15s;
+}
+.ctrl-gp-option:hover { border-color: var(--acc); }
+.ctrl-gp-option.selected { border-color: var(--green); }
+.ctrl-gp-option > span:first-child { flex: 1; font-size: .88rem; }
+.ctrl-gp-sub { display: block; font-size: .72rem; color: var(--muted); margin-top: 2px; }
+.ctrl-gp-check { color: var(--green); font-weight: 800; }
+.ctrl-gp-hint  { color: var(--muted); font-size: .78rem; margin-top: 8px; text-align: center; }
+.ctrl-footer {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+/* ═══════════════════════════════════════════════════════
+   MODE SELECT SCREEN
+═══════════════════════════════════════════════════════ */
+#modeScreen .mode-cards {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin: 24px 0;
+  width: 100%;
+  max-width: 620px;
+}
+
+.mode-card {
+  background: var(--surf);
+  border: 2.5px solid var(--border);
+  border-radius: 20px;
+  padding: 32px 28px;
+  cursor: pointer;
+  flex: 1;
+  min-width: 220px;
+  max-width: 280px;
+  text-align: center;
+  transition: .2s;
+  user-select: none;
+}
+.mode-card:hover { border-color: var(--acc); transform: translateY(-3px); box-shadow: 0 8px 28px rgba(108,99,255,.18); }
+.mode-card.sel   { border-color: var(--acc); background: #1a1a32; }
+.mode-card .mode-icon { font-size: 3rem; margin-bottom: 12px; }
+.mode-card h2 { font-size: 1.25rem; margin-bottom: 6px; }
+.mode-card p  { color: var(--muted); font-size: .82rem; line-height: 1.6; }
+
+.mode-features {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  text-align: left;
+}
+.mode-features li {
+  color: var(--muted);
+  font-size: .78rem;
+  padding: 2px 0;
+}
+.mode-features li::before { content: "• "; color: var(--acc); }
+
+/* ═══════════════════════════════════════════════════════
+   LOCAL LOBBY SCREEN
+═══════════════════════════════════════════════════════ */
+#localLobbyScreen .local-players-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  max-width: 520px;
+  margin: 16px 0;
+}
+
+.local-player-row {
+  background: var(--surf);
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.local-player-row.active { border-color: var(--acc); }
+.local-player-row.bot-row { border-color: #a06428; background: #16130a; opacity: .85; }
+
+.lpr-num {
+  font-size: 1.4rem;
+  font-weight: 800;
+  width: 28px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.lpr-info { flex: 1; }
+.lpr-name { font-size: .9rem; font-weight: 600; }
+.lpr-keys { color: var(--muted); font-size: .75rem; margin-top: 2px; }
+.lpr-gp   { color: #50C864; font-size: .75rem; }
+
+.lpr-config-btn {
+  padding: 6px 14px;
+  background: none;
+  border: 1.5px solid var(--acc);
+  color: var(--acc);
+  border-radius: 7px;
+  font-size: .8rem;
+  cursor: pointer;
+  transition: .15s;
+  flex-shrink: 0;
+}
+.lpr-config-btn:hover { background: var(--acc); color: #fff; }
+
+/* Local player count picker */
+.local-count-row {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  max-width: 520px;
+  margin-bottom: 6px;
+}
+.local-count-btn {
+  flex: 1;
+  padding: 12px 0;
+  background: var(--surf);
+  border: 2px solid var(--border);
+  color: var(--muted);
+  border-radius: 10px;
+  font-size: 1.1rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: .15s;
+}
+.local-count-btn:hover { border-color: var(--muted); }
+.local-count-btn.active { border-color: var(--acc); background: #1a1a30; color: var(--text); }
+
+/* Local game cards (same style as main game cards) */
+#localLobbyScreen .game-cards { margin-bottom: 18px; }
+
+/* ═══════════════════════════════════════════════════════
+   LOCAL LOBBY – name input & colour swatches
+═══════════════════════════════════════════════════════ */
+.lpr-name-input {
+  background: transparent;
+  border: none;
+  border-bottom: 1.5px solid var(--border);
+  color: var(--text);
+  font-size: .93rem;
+  font-weight: 600;
+  padding: 2px 4px;
+  width: 100%;
+  max-width: 160px;
+  outline: none;
+  transition: border-color .15s;
+}
+.lpr-name-input:focus { border-bottom-color: var(--acc); }
+
+.lpr-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 5px 0 3px;
+}
+.lpr-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: transform .12s, border-color .12s;
+  flex-shrink: 0;
+}
+.lpr-swatch:hover  { transform: scale(1.2); }
+.lpr-swatch.sel    { border-color: #fff; transform: scale(1.15); }
+
+.lpr-team-badge {
+  font-size: .72rem;
+  font-weight: 700;
+  margin-top: 3px;
+  display: block;
+}
+
+/* Team mode toggle */
+.local-team-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--surf);
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 16px;
+  cursor: pointer;
+  width: 100%;
+  max-width: 520px;
+  transition: border-color .15s;
+}
+.local-team-row:hover { border-color: var(--acc); }
+.local-team-row input[type=checkbox] { accent-color: var(--acc); width: 17px; height: 17px; cursor: pointer; }
+.local-team-label { flex: 1; }
+.local-team-label strong { display: block; font-size: .92rem; }
+.local-team-label span   { color: var(--muted); font-size: .78rem; }
+
+/* ═══════════════════════════════════════════════════════
+   CONTROLS CONFIG MODAL
+═══════════════════════════════════════════════════════ */
+.ctrl-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.78);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.ctrl-modal {
+  background: #1a1a2e;
+  border: 2px solid var(--border);
+  border-radius: 18px;
+  padding: 24px 28px;
+  width: 100%;
+  max-width: 440px;
+  max-height: 92vh;
+  overflow-y: auto;
+}
+
+.ctrl-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+.ctrl-modal-title { font-size: 1.05rem; font-weight: 700; }
+.ctrl-close {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+.ctrl-close:hover { background: var(--border); color: var(--text); }
+
+.ctrl-section-label {
+  font-size: .7rem;
+  font-weight: 700;
+  letter-spacing: .1em;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+
+/* Key rows */
+.ctrl-key-rows { display: flex; flex-direction: column; gap: 8px; }
+.ctrl-key-row  { display: flex; align-items: center; gap: 10px; }
+.ctrl-key-label { flex: 1; font-size: .88rem; color: var(--text); }
+.ctrl-key-badge {
+  padding: 7px 16px;
+  background: var(--surf);
+  border: 1.5px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  font-size: .85rem;
+  font-family: monospace;
+  cursor: pointer;
+  min-width: 88px;
+  text-align: center;
+  transition: .15s;
+}
+.ctrl-key-badge:hover { border-color: var(--acc); }
+.ctrl-key-badge.listening {
+  border-color: var(--acc2);
+  color: var(--acc2);
+  animation: blink .6s steps(1) infinite;
+}
+@keyframes blink { 50% { opacity: .4; } }
+
+/* Gamepad area */
+.ctrl-gamepad-area { margin-top: 6px; }
+.ctrl-no-gp { color: var(--muted); font-size: .82rem; font-style: italic; }
+
+.ctrl-gp-list { display: flex; flex-direction: column; gap: 7px; }
+.ctrl-gp-option {
+  background: var(--surf);
+  border: 1.5px solid var(--border);
+  border-radius: 9px;
+  padding: 11px 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transition: .15s;
+}
+.ctrl-gp-option:hover { border-color: var(--acc); }
+.ctrl-gp-option.selected { border-color: #50C864; }
+.ctrl-gp-option > span:first-child { flex: 1; font-size: .88rem; }
+.ctrl-gp-sub { display: block; font-size: .72rem; color: var(--muted); margin-top: 2px; }
+.ctrl-gp-check { color: #50C864; font-weight: 800; font-size: .9rem; }
+.ctrl-gp-hint  { color: var(--muted); font-size: .78rem; margin-top: 8px; text-align: center; }
+
+/* Footer */
+.ctrl-footer {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+/* Online controls link */
+.online-ctrl-link {
+  color: var(--acc);
+  font-size: .82rem;
+  cursor: pointer;
+  text-decoration: underline;
+  background: none;
+  border: none;
+  padding: 0;
+}
+.online-ctrl-link:hover { color: #9c94ff; }
 </style>
 </head>
 <body>
@@ -437,7 +832,7 @@ hr{border:none;border-top:1px solid var(--border);width:100%;margin:18px 0}
     margin-bottom:6px;
   ">🎮 MultiGame</div>
   <div style="color:#7878a0;font-size:.95rem;margin-bottom:10px;">
-    Play online — mix humans and bots however you like
+    Play online or locally — keyboard &amp; controller support
   </div>
   <button id="splashBtn" style="
     padding:16px 48px;
@@ -455,11 +850,42 @@ hr{border:none;border-top:1px solid var(--border);width:100%;margin:18px 0}
 </div>
 
 
-
-<!-- ══════════════════════════════════════ LOBBY -->
-<div id="lobbyScreen" class="screen active">
+<!-- ══════════════════════════════════════ MODE SELECT -->
+<div id="modeScreen" class="screen active">
   <div class="logo">🎮 MultiGame</div>
-  <div class="subtitle">Play online — mix humans and bots however you like</div>
+  <div class="subtitle">How do you want to play?</div>
+
+  <div class="mode-cards">
+    <div class="mode-card" onclick="chooseMode('online')">
+      <div class="mode-icon">🌐</div>
+      <h2>Online</h2>
+      <p>Play with friends over the network. Mix humans and bots. Share a room code.</p>
+      <ul class="mode-features">
+        <li>1 player per device</li>
+        <li>Custom room codes</li>
+        <li>Bot opponents (Easy / Medium / Hard)</li>
+        <li>Team mode (2v2)</li>
+      </ul>
+    </div>
+    <div class="mode-card" onclick="chooseMode('local')">
+      <div class="mode-icon">🛋️</div>
+      <h2>Local</h2>
+      <p>Everyone plays on the same screen. Each player configures their own keys or gamepad.</p>
+      <ul class="mode-features">
+        <li>2–4 players, same device</li>
+        <li>Keyboard or USB controller per player</li>
+        <li>Fully configurable bindings</li>
+        <li>Add bots to fill empty slots</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════ ONLINE LOBBY -->
+<div id="lobbyScreen" class="screen">
+  <div class="logo">🎮 MultiGame</div>
+  <div class="subtitle">Online — mix humans and bots however you like</div>
 
   <div class="game-cards">
     <div class="game-card sel" data-type="crash_bash" onclick="selectGame('crash_bash',this)">
@@ -492,7 +918,6 @@ hr{border:none;border-top:1px solid var(--border);width:100%;margin:18px 0}
       <div class="color-swatches" id="createColorSwatches"></div>
     </div>
 
-    <!-- ── PLAYER COUNT + SLOT CONFIGURATOR ── -->
     <div class="section">
       <label>Number of players</label>
       <div class="player-count-picker" id="playerCountPicker">
@@ -539,7 +964,9 @@ hr{border:none;border-top:1px solid var(--border);width:100%;margin:18px 0}
     </div>
 
     <div class="error-msg" id="createError"></div>
-    <button class="btn btn-primary" onclick="createGame()" id="createBtn">Create &amp; Play</button>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="createGame()" id="createBtn">Create &amp; Play</button>
+    </div>
   </div>
 
   <!-- ── JOIN panel ── -->
@@ -567,12 +994,90 @@ hr{border:none;border-top:1px solid var(--border);width:100%;margin:18px 0}
   </div>
 
   <hr>
-  <button class="btn btn-secondary" onclick="openKeyScreen()">⌨️ Configure Keys</button>
+  <div class="btn-row">
+    <button class="btn btn-secondary" onclick="openOnlineKeyConfig()">⌨️ My Keys</button>
+    <button class="btn btn-secondary" onclick="showScreen('modeScreen')">← Back</button>
+  </div>
 </div>
 
-<!-- ══════════════════════════════════════ KEY CONFIG -->
+
+<!-- ══════════════════════════════════════ LOCAL LOBBY -->
+<div id="localLobbyScreen" class="screen">
+  <div class="logo">🛋️ Local Play</div>
+  <div class="subtitle">Everyone on the same screen</div>
+
+  <!-- Game type selector -->
+  <div class="game-cards" style="max-width:520px">
+    <div class="game-card sel" data-type="crash_bash" onclick="localSelectGame('crash_bash',this)">
+      <div class="icon">⚽</div>
+      <h3>Crash Bash</h3>
+      <p>Guard your goal · 4 balls · Last standing wins</p>
+    </div>
+    <div class="game-card" data-type="tnt_battle" onclick="localSelectGame('tnt_battle',this)">
+      <div class="icon">💥</div>
+      <h3>TNT Battle</h3>
+      <p>Throw crates · 100 HP · Explosive chaos</p>
+    </div>
+  </div>
+
+  <!-- Human player count -->
+  <div class="section" style="max-width:520px">
+    <label>Human players</label>
+    <div class="local-count-row" id="localHumanCountRow">
+      <button class="local-count-btn" data-n="1" onclick="setLocalHumanCount(1)">1P</button>
+      <button class="local-count-btn active" data-n="2" onclick="setLocalHumanCount(2)">2P</button>
+      <button class="local-count-btn" data-n="3" onclick="setLocalHumanCount(3)">3P</button>
+      <button class="local-count-btn" data-n="4" onclick="setLocalHumanCount(4)">4P</button>
+    </div>
+  </div>
+
+  <!-- Bot count -->
+  <div class="section" style="max-width:520px">
+    <label>Bot opponents</label>
+    <div class="local-count-row" id="localBotCountRow">
+      <button class="local-count-btn active" data-n="0" onclick="setLocalBotCount(0)">0 bots</button>
+      <button class="local-count-btn" data-n="1" onclick="setLocalBotCount(1)">1 bot</button>
+      <button class="local-count-btn" data-n="2" onclick="setLocalBotCount(2)">2 bots</button>
+    </div>
+  </div>
+
+  <!-- Bot difficulty -->
+  <div class="section" style="max-width:520px" id="localBotDiffSection" style="display:none">
+    <label>Bot difficulty</label>
+    <select id="localBotDiff">
+      <option value="easy">Easy</option>
+      <option value="medium" selected>Medium</option>
+      <option value="hard">Hard</option>
+    </select>
+  </div>
+
+  <!-- Team mode (4-player only) -->
+  <div class="section" style="max-width:520px" id="localTeamModeSection" style="display:none">
+    <label>Game mode</label>
+    <label class="local-team-row">
+      <input type="checkbox" id="localTeamModeCheck" onchange="toggleLocalTeamMode(this.checked)">
+      <div class="local-team-label">
+        <strong>2v2 Team Mode</strong>
+        <span>P1 &amp; P3 vs P2 &amp; P4 — shared score, coordinated teamwork</span>
+      </div>
+    </label>
+  </div>
+
+  <!-- Per-player control rows -->
+  <div class="local-players-grid" id="localPlayersGrid"></div>
+
+  <div class="error-msg" id="localError"></div>
+
+  <div class="btn-row" style="margin-top:6px">
+    <button class="btn btn-primary" id="localStartBtn" onclick="startLocalGame()">▶ Start Game</button>
+    <button class="btn btn-secondary" onclick="showScreen('modeScreen')">← Back</button>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════ KEY CONFIG (legacy online P1 screen) -->
 <div id="keyScreen" class="screen">
-  <h2 style="margin-bottom:22px">⌨️ Key Bindings</h2>
+  <h2 style="margin-bottom:22px">⌨️ Key Bindings (Online – Player 1)</h2>
   <div class="key-config" id="keyConfigRows"></div>
   <div class="btn-row" style="margin-top:22px">
     <button class="btn btn-secondary" onclick="resetKeys()">Reset defaults</button>
@@ -608,7 +1113,6 @@ hr{border:none;border-top:1px solid var(--border);width:100%;margin:18px 0}
     <div style="display:flex;gap:8px;align-items:center">
       <button class="fs-btn" id="fsBtn" onclick="toggleFullscreen()" title="Fullscreen" aria-label="Toggle fullscreen">
         <svg id="fsIcon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-          <!-- expand arrows (default state) -->
           <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
           <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
         </svg>
@@ -620,7 +1124,6 @@ hr{border:none;border-top:1px solid var(--border);width:100%;margin:18px 0}
   <canvas id="gameCanvas" width="800" height="600"></canvas>
   <div class="mobile-controls" id="mobileControls">
     <div class="ctrl-wrap">
-      <!-- Joystick mode (default) -->
       <div class="joystick-zone" id="joystickZone">
         <div class="joystick-knob" id="joystickKnob"></div>
         <div class="joy-arrow up" id="joyUp"></div>
@@ -628,7 +1131,6 @@ hr{border:none;border-top:1px solid var(--border);width:100%;margin:18px 0}
         <div class="joy-arrow lt" id="joyLt"></div>
         <div class="joy-arrow rt" id="joyRt"></div>
       </div>
-      <!-- D-pad mode (hidden until toggled) -->
       <div class="dpad" id="dpad">
         <div class="dpad-btn up" id="dpUp">▲</div>
         <div class="dpad-btn dn" id="dpDn">▼</div>
@@ -652,12 +1154,14 @@ hr{border:none;border-top:1px solid var(--border);width:100%;margin:18px 0}
   </div>
 </div>
 
-<!-- ══════════════════════════════════════ COUNTDOWN (body-level, always on top) -->
+<!-- ══════════════════════════════════════ COUNTDOWN -->
 <div id="countdownOverlay">
   <div id="countdownNumber"></div>
   <div id="countdownGo">GO!</div>
 </div>
 
-<script src="static/app.js"></script> 
+<script src="static/controls.js"></script>
+<script src="static/local_mode.js"></script>
+<script src="static/app.js"></script>
 </body>
 </html>

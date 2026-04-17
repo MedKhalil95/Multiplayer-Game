@@ -1936,3 +1936,326 @@ initColorPicker("joinColorSwatches",   "playerColor");
     localStorage.removeItem("gameType");
   }
 })();
+
+// ═══════════════════════════════════════════════════════════════════════
+//  app_additions.js
+//
+//  Append this block to the END of app.js (after the last line of the
+//  existing file).  It adds:
+//
+//   1. Mode select  (chooseMode)
+//   2. Local lobby  (local game-type selector, player count, bot count,
+//                    per-player row rendering)
+//   3. Controls.init() wiring + openOnlineKeyConfig()
+//   4. LocalMode integration  (startLocalGame, stop on goLobby, etc.)
+//   5. Patches to startInputLoop / stopInputLoop to delegate to LocalMode
+//      when local mode is active.
+//   6. goLobby() override that returns to modeScreen correctly.
+//
+//  ALSO: change the first screen shown at startup from "lobbyScreen"
+//  to "modeScreen".  Find the lines at the bottom of app.js that call
+//  showScreen("lobbyScreen") on init and replace them — or simply let
+//  index.html start with modeScreen.active (already done in new index.html).
+// ═══════════════════════════════════════════════════════════════════════
+
+// ── Boot Controls ────────────────────────────────────────────────────
+Controls.init();
+
+// ── Mode Select ───────────────────────────────────────────────────────
+function chooseMode(mode) {
+  _cdVoice.unlock();
+  if (mode === 'online') {
+    showScreen('lobbyScreen');
+  } else {
+    showScreen('localLobbyScreen');
+    renderLocalLobby();
+  }
+}
+
+// ── Local Lobby State ─────────────────────────────────────────────────
+let _localGameType  = 'crash_bash';
+let _localHumans    = 2;
+let _localBots      = 0;
+let _localTeamMode  = false;
+
+// Per-player name and color for local lobby (indexed 0-3)
+const LOCAL_DEFAULT_COLORS = ["#DC5050", "#5050DC", "#50C864", "#DCDC50"];
+let _localPlayerNames  = ["Player 1", "Player 2", "Player 3", "Player 4"];
+let _localPlayerColors = [...LOCAL_DEFAULT_COLORS];
+
+// Load persisted local names/colors
+(function _loadLocalProfiles() {
+  try {
+    const raw = localStorage.getItem("localPlayerProfiles");
+    if (raw) {
+      const saved = JSON.parse(raw);
+      saved.forEach((p, i) => {
+        if (p.name)  _localPlayerNames[i]  = p.name;
+        if (p.color) _localPlayerColors[i] = p.color;
+      });
+    }
+  } catch(_) {}
+})();
+
+function _saveLocalProfiles() {
+  const data = _localPlayerNames.map((name, i) => ({ name, color: _localPlayerColors[i] }));
+  localStorage.setItem("localPlayerProfiles", JSON.stringify(data));
+}
+
+function localSelectGame(type, el) {
+  _localGameType = type;
+  document.querySelectorAll('#localLobbyScreen .game-card').forEach(c => c.classList.remove('sel'));
+  el.classList.add('sel');
+}
+
+function setLocalHumanCount(n) {
+  _localHumans = n;
+  // Clamp bots so total <= 4
+  const maxBots = Math.min(2, 4 - n);
+  if (_localBots > maxBots) _localBots = maxBots;
+  document.querySelectorAll('#localHumanCountRow .local-count-btn').forEach(b => {
+    b.classList.toggle('active', parseInt(b.dataset.n) === n);
+  });
+  _syncLocalBotBtns();
+  _syncLocalTeamMode();
+  renderLocalLobby();
+}
+
+function setLocalBotCount(n) {
+  // Ensure total stays <= 4
+  const maxBots = Math.min(2, 4 - _localHumans);
+  _localBots = Math.min(n, maxBots);
+  _syncLocalBotBtns();
+  _syncLocalTeamMode();
+  renderLocalLobby();
+}
+
+function _syncLocalBotBtns() {
+  const maxBots = Math.min(2, 4 - _localHumans);
+  document.querySelectorAll('#localBotCountRow .local-count-btn').forEach(b => {
+    const v = parseInt(b.dataset.n);
+    b.disabled = (v > maxBots);
+    b.style.opacity = (v > maxBots) ? '.3' : '';
+    b.classList.toggle('active', v === _localBots);
+  });
+  const diffSec = document.getElementById('localBotDiffSection');
+  if (diffSec) diffSec.style.display = _localBots > 0 ? '' : 'none';
+}
+
+function _syncLocalTeamMode() {
+  const total = _localHumans + _localBots;
+  const sec = document.getElementById('localTeamModeSection');
+  if (!sec) return;
+  sec.style.display = (total === 4) ? '' : 'none';
+  if (total !== 4) _localTeamMode = false;
+  const chk = document.getElementById('localTeamModeCheck');
+  if (chk) chk.checked = _localTeamMode;
+  _renderTeamBadges();
+}
+
+function toggleLocalTeamMode(checked) {
+  _localTeamMode = checked;
+  _renderTeamBadges();
+}
+
+function _renderTeamBadges() {
+  // Show Team A / Team B badges on player rows when team mode is on
+  const total = _localHumans + _localBots;
+  if (!_localTeamMode || total !== 4) {
+    document.querySelectorAll('.lpr-team-badge').forEach(el => el.textContent = '');
+    return;
+  }
+  // Teams: slots 0,2 = Team A (Red); slots 1,3 = Team B (Blue)
+  const labels = ['🔴 Team A', '🔵 Team B', '🔴 Team A', '🔵 Team B'];
+  for (let i = 0; i < 4; i++) {
+    const el = document.getElementById(`lpr_team_${i}`);
+    if (el) el.textContent = i < _localHumans ? labels[i] : '';
+  }
+}
+
+function renderLocalLobby() {
+  Controls.setPlayerCount(_localHumans);
+  const profiles = Controls.getProfiles();
+  const grid = document.getElementById('localPlayersGrid');
+  if (!grid) return;
+
+  let html = '';
+  // Human players
+  for (let i = 0; i < _localHumans; i++) {
+    const p      = profiles[i];
+    const gpIdx  = p.gamepadIndex;
+    const gpText = (gpIdx !== null && gpIdx !== undefined) ? `🎮 Controller ${gpIdx}` : '';
+    const keyText = `${_fmtKeyShort(p.keys.up)} ${_fmtKeyShort(p.keys.down)} ${_fmtKeyShort(p.keys.left)} ${_fmtKeyShort(p.keys.right)} · Action: ${_fmtKeyShort(p.keys.action)}`;
+    const savedName  = _localPlayerNames[i]  || `Player ${i + 1}`;
+    const savedColor = _localPlayerColors[i] || LOCAL_DEFAULT_COLORS[i];
+
+    // Build color swatch row for this player
+    const swatches = COLOR_PALETTE.map(c =>
+      `<span class="lpr-swatch${c === savedColor ? ' sel' : ''}"
+             style="background:${c}"
+             onclick="setLocalPlayerColor(${i},'${c}')"></span>`
+    ).join('');
+
+    html += `<div class="local-player-row active" id="lpr_${i}">
+      <div class="lpr-num" style="color:${LOCAL_DEFAULT_COLORS[i]}">${i + 1}</div>
+      <div class="lpr-info">
+        <input class="lpr-name-input"
+               id="lpr_name_${i}"
+               type="text"
+               maxlength="16"
+               value="${savedName}"
+               placeholder="Player ${i + 1}"
+               oninput="setLocalPlayerName(${i}, this.value)" />
+        <div class="lpr-swatches">${swatches}</div>
+        <div class="lpr-keys">${keyText}</div>
+        ${gpText ? `<div class="lpr-gp">${gpText}</div>` : ''}
+        <span class="lpr-team-badge" id="lpr_team_${i}"></span>
+      </div>
+      <button class="lpr-config-btn" onclick="openPlayerConfig(${i})">⌨️ Config</button>
+    </div>`;
+  }
+  // Bot slots
+  for (let i = 0; i < _localBots; i++) {
+    html += `<div class="local-player-row bot-row">
+      <div class="lpr-num">🤖</div>
+      <div class="lpr-info">
+        <div class="lpr-name">Bot ${i + 1}</div>
+        <div class="lpr-keys">Controlled by AI</div>
+      </div>
+    </div>`;
+  }
+  grid.innerHTML = html;
+  _syncLocalBotBtns();
+  _syncLocalTeamMode();
+}
+
+function setLocalPlayerName(i, val) {
+  _localPlayerNames[i] = val.trim() || `Player ${i + 1}`;
+  _saveLocalProfiles();
+}
+
+function setLocalPlayerColor(i, hex) {
+  _localPlayerColors[i] = hex;
+  _saveLocalProfiles();
+  renderLocalLobby();
+}
+
+function _fmtKeyShort(k) {
+  if (!k) return '?';
+  if (k === ' ') return 'Spc';
+  return k.replace('Arrow','').replace('Key','').slice(0,4) || k.slice(0,4);
+}
+
+function openPlayerConfig(playerIndex) {
+  Controls.openConfig(playerIndex, () => {
+    renderLocalLobby();
+  });
+}
+
+// Online: open controls config for Player 1 only
+function openOnlineKeyConfig() {
+  Controls.openConfig(0, () => {
+    // Sync legacy keyBindings from Controls profile so existing buildInput() still works
+    keyBindings = { ...Controls.getProfiles()[0].keys };
+    localStorage.setItem('kb', JSON.stringify(keyBindings));
+    showKeyConfig(); // refresh legacy key screen if open
+  });
+}
+
+// ── Start Local Game ──────────────────────────────────────────────────
+async function startLocalGame() {
+  const total = _localHumans + _localBots;
+  if (total < 2) {
+    document.getElementById('localError').textContent = 'Need at least 2 players total.';
+    return;
+  }
+  if (total > 4) {
+    document.getElementById('localError').textContent = 'Maximum 4 players total.';
+    return;
+  }
+  document.getElementById('localError').textContent = '';
+  const btn = document.getElementById('localStartBtn');
+  btn.disabled = true;
+  btn.textContent = 'Starting…';
+
+  const diff = document.getElementById('localBotDiff')?.value || 'medium';
+  S.gameType = _localGameType;
+
+  const names  = _localPlayerNames.slice(0, _localHumans).map((n, i) => n.trim() || `Player ${i + 1}`);
+  const colors = _localPlayerColors.slice(0, _localHumans);
+
+  try {
+    await LocalMode.start(_localGameType, _localHumans, _localBots, diff, names, colors, _localTeamMode);
+  } catch(e) {
+    document.getElementById('localError').textContent = e.message || 'Failed to start.';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '▶ Start Game';
+  }
+}
+
+// ── Patch startInputLoop to handle local mode ─────────────────────────
+//
+// In local mode, LocalMode.startInputLoops() drives all human players.
+// We hook into the game_starting SSE event path by overriding startInputLoop.
+//
+const _origStartInputLoop = startInputLoop;
+const _origStopInputLoop  = stopInputLoop;
+
+// Replace startInputLoop globally
+window.startInputLoop = function() {
+  if (LocalMode.isActive()) {
+    LocalMode.startInputLoops();
+  } else {
+    _origStartInputLoop();
+  }
+};
+
+window.stopInputLoop = function() {
+  if (LocalMode.isActive()) {
+    LocalMode.stopInputLoops();
+  }
+  _origStopInputLoop();
+};
+
+// ── Patch goLobby to stop local mode and return to modeScreen ─────────
+const _origGoLobby = goLobby;
+window.goLobby = function() {
+  LocalMode.stop();
+  _origGoLobby();
+  // After goLobby shows lobbyScreen, redirect to modeScreen
+  // (goLobby calls showScreen('lobbyScreen') internally, so we override)
+  showScreen('modeScreen');
+};
+
+// ── Patch leaveGame similarly ─────────────────────────────────────────
+const _origLeaveGame = leaveGame;
+window.leaveGame = function() {
+  LocalMode.stop();
+  _origLeaveGame();
+  showScreen('modeScreen');
+};
+
+// ── Sync Controls → legacy keyBindings on startup ─────────────────────
+// The existing buildInput() in app.js reads from keyBindings (P1 only, online).
+// We keep them in sync so online play uses Controls profile 0.
+(function syncLegacyBindings() {
+  const p0 = Controls.getProfiles()[0];
+  if (p0) {
+    keyBindings = { ...p0.keys };
+    localStorage.setItem('kb', JSON.stringify(keyBindings));
+  }
+})();
+
+// ── Override buildInput for online mode to use Controls ───────────────
+// The original buildInput() reads from S.keys + keyBindings + _actionLatch.
+// We augment it to also pick up gamepad input from Controls.getInput(0).
+const _origBuildInput = buildInput;
+window.buildInput = function() {
+  if (LocalMode.isActive()) {
+    // Should not be called directly in local mode (each player has own loop)
+    return Controls.getInput(0);
+  }
+  // Online: merge legacy keyboard state with Controls (includes gamepad)
+  return Controls.getInput(0);
+};

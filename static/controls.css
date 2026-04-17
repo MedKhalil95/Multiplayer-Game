@@ -1,0 +1,241 @@
+/* ═══════════════════════════════════════════════════════
+   MODE SELECT SCREEN
+═══════════════════════════════════════════════════════ */
+#modeScreen .mode-cards {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin: 24px 0;
+  width: 100%;
+  max-width: 620px;
+}
+
+.mode-card {
+  background: var(--surf);
+  border: 2.5px solid var(--border);
+  border-radius: 20px;
+  padding: 32px 28px;
+  cursor: pointer;
+  flex: 1;
+  min-width: 220px;
+  max-width: 280px;
+  text-align: center;
+  transition: .2s;
+  user-select: none;
+}
+.mode-card:hover { border-color: var(--acc); transform: translateY(-3px); box-shadow: 0 8px 28px rgba(108,99,255,.18); }
+.mode-card.sel   { border-color: var(--acc); background: #1a1a32; }
+.mode-card .mode-icon { font-size: 3rem; margin-bottom: 12px; }
+.mode-card h2 { font-size: 1.25rem; margin-bottom: 6px; }
+.mode-card p  { color: var(--muted); font-size: .82rem; line-height: 1.6; }
+
+.mode-features {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  text-align: left;
+}
+.mode-features li {
+  color: var(--muted);
+  font-size: .78rem;
+  padding: 2px 0;
+}
+.mode-features li::before { content: "• "; color: var(--acc); }
+
+/* ═══════════════════════════════════════════════════════
+   LOCAL LOBBY SCREEN
+═══════════════════════════════════════════════════════ */
+#localLobbyScreen .local-players-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  max-width: 520px;
+  margin: 16px 0;
+}
+
+.local-player-row {
+  background: var(--surf);
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.local-player-row.active { border-color: var(--acc); }
+.local-player-row.bot-row { border-color: #a06428; background: #16130a; opacity: .85; }
+
+.lpr-num {
+  font-size: 1.4rem;
+  font-weight: 800;
+  width: 28px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.lpr-info { flex: 1; }
+.lpr-name { font-size: .9rem; font-weight: 600; }
+.lpr-keys { color: var(--muted); font-size: .75rem; margin-top: 2px; }
+.lpr-gp   { color: #50C864; font-size: .75rem; }
+
+.lpr-config-btn {
+  padding: 6px 14px;
+  background: none;
+  border: 1.5px solid var(--acc);
+  color: var(--acc);
+  border-radius: 7px;
+  font-size: .8rem;
+  cursor: pointer;
+  transition: .15s;
+  flex-shrink: 0;
+}
+.lpr-config-btn:hover { background: var(--acc); color: #fff; }
+
+/* Local player count picker */
+.local-count-row {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  max-width: 520px;
+  margin-bottom: 6px;
+}
+.local-count-btn {
+  flex: 1;
+  padding: 12px 0;
+  background: var(--surf);
+  border: 2px solid var(--border);
+  color: var(--muted);
+  border-radius: 10px;
+  font-size: 1.1rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: .15s;
+}
+.local-count-btn:hover { border-color: var(--muted); }
+.local-count-btn.active { border-color: var(--acc); background: #1a1a30; color: var(--text); }
+
+/* Local game cards (same style as main game cards) */
+#localLobbyScreen .game-cards { margin-bottom: 18px; }
+
+/* ═══════════════════════════════════════════════════════
+   CONTROLS CONFIG MODAL
+═══════════════════════════════════════════════════════ */
+.ctrl-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.78);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.ctrl-modal {
+  background: #1a1a2e;
+  border: 2px solid var(--border);
+  border-radius: 18px;
+  padding: 24px 28px;
+  width: 100%;
+  max-width: 440px;
+  max-height: 92vh;
+  overflow-y: auto;
+}
+
+.ctrl-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+.ctrl-modal-title { font-size: 1.05rem; font-weight: 700; }
+.ctrl-close {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+.ctrl-close:hover { background: var(--border); color: var(--text); }
+
+.ctrl-section-label {
+  font-size: .7rem;
+  font-weight: 700;
+  letter-spacing: .1em;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+
+/* Key rows */
+.ctrl-key-rows { display: flex; flex-direction: column; gap: 8px; }
+.ctrl-key-row  { display: flex; align-items: center; gap: 10px; }
+.ctrl-key-label { flex: 1; font-size: .88rem; color: var(--text); }
+.ctrl-key-badge {
+  padding: 7px 16px;
+  background: var(--surf);
+  border: 1.5px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  font-size: .85rem;
+  font-family: monospace;
+  cursor: pointer;
+  min-width: 88px;
+  text-align: center;
+  transition: .15s;
+}
+.ctrl-key-badge:hover { border-color: var(--acc); }
+.ctrl-key-badge.listening {
+  border-color: var(--acc2);
+  color: var(--acc2);
+  animation: blink .6s steps(1) infinite;
+}
+@keyframes blink { 50% { opacity: .4; } }
+
+/* Gamepad area */
+.ctrl-gamepad-area { margin-top: 6px; }
+.ctrl-no-gp { color: var(--muted); font-size: .82rem; font-style: italic; }
+
+.ctrl-gp-list { display: flex; flex-direction: column; gap: 7px; }
+.ctrl-gp-option {
+  background: var(--surf);
+  border: 1.5px solid var(--border);
+  border-radius: 9px;
+  padding: 11px 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transition: .15s;
+}
+.ctrl-gp-option:hover { border-color: var(--acc); }
+.ctrl-gp-option.selected { border-color: #50C864; }
+.ctrl-gp-option > span:first-child { flex: 1; font-size: .88rem; }
+.ctrl-gp-sub { display: block; font-size: .72rem; color: var(--muted); margin-top: 2px; }
+.ctrl-gp-check { color: #50C864; font-weight: 800; font-size: .9rem; }
+.ctrl-gp-hint  { color: var(--muted); font-size: .78rem; margin-top: 8px; text-align: center; }
+
+/* Footer */
+.ctrl-footer {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+/* Online controls link */
+.online-ctrl-link {
+  color: var(--acc);
+  font-size: .82rem;
+  cursor: pointer;
+  text-decoration: underline;
+  background: none;
+  border: none;
+  padding: 0;
+}
+.online-ctrl-link:hover { color: #9c94ff; }
