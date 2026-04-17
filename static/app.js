@@ -2250,12 +2250,28 @@ window.leaveGame = function() {
 // ── Override buildInput for online mode to use Controls ───────────────
 // The original buildInput() reads from S.keys + keyBindings + _actionLatch.
 // We augment it to also pick up gamepad input from Controls.getInput(0).
+// IMPORTANT: mobile touch (joystick / d-pad / action button) writes into
+// S.keys and the local _actionLatch — we must OR those in so touch still works.
 const _origBuildInput = buildInput;
 window.buildInput = function() {
   if (LocalMode.isActive()) {
     // Should not be called directly in local mode (each player has own loop)
     return Controls.getInput(0);
   }
-  // Online: merge legacy keyboard state with Controls (includes gamepad)
-  return Controls.getInput(0);
+  // Get keyboard + gamepad state from Controls profile 0
+  const ctrl = Controls.getInput(0);
+
+  // Get mobile touch state from legacy S.keys / keyBindings / _actionLatch
+  const k = S.keys;
+  const touchAction = !!k[keyBindings.action] || _actionLatch;
+  _actionLatch = false; // consume latch
+
+  // Merge: any source being true counts as pressed
+  return {
+    up:     ctrl.up    || !!k[keyBindings.up],
+    down:   ctrl.down  || !!k[keyBindings.down],
+    left:   ctrl.left  || !!k[keyBindings.left],
+    right:  ctrl.right || !!k[keyBindings.right],
+    action: ctrl.action || touchAction,
+  };
 };
