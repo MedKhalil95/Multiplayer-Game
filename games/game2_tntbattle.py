@@ -350,8 +350,11 @@ class TnTBattleGame(BaseHeadlessGame):
         self.weight: WeightItem | None = None
         self._weight_respawn_timer = WEIGHT_SPAWN_TICK  # first spawn at 15 s
 
-        # Start with a short timer so first crates appear soon
-        self.crate_spawn_timer = 60
+        # Spawn 3 starter crates near every player at game start
+        self._spawn_starter_crates(W, H)
+
+        # First periodic wave comes after a delay (arena already has starter crates)
+        self.crate_spawn_timer = CRATE_SPAWN_HI        # ~4 s before first wave
         self.fruit_spawn_timer = 240   # first fruit after ~4 s
 
     # ── tick ──────────────────────────────────────────────────────────
@@ -365,11 +368,11 @@ class TnTBattleGame(BaseHeadlessGame):
         W, H = self.ARENA_W, self.ARENA_H
         alive = [p for p in self.players.values() if not p.eliminated]
 
-        # 1. Spawn pickup crates ----------------------------------------
+        # 1. Spawn pickup crates – periodic wave of 4 across different zones
         self.crate_spawn_timer -= 1
-        if (self.crate_spawn_timer <= 0 and
-                len(self.pickup_crates) < MAX_CRATES):
-            self._try_spawn_crate(alive, W, H)
+        if self.crate_spawn_timer <= 0:
+            if len(self.pickup_crates) < MAX_CRATES:
+                self._try_spawn_crate_wave(alive, W, H, count=4)
             self.crate_spawn_timer = random.randint(CRATE_SPAWN_LO, CRATE_SPAWN_HI)
 
         # 1b. Spawn health fruits ----------------------------------------
@@ -385,8 +388,9 @@ class TnTBattleGame(BaseHeadlessGame):
         if not anyone_cursed and not (self.weight and self.weight.active):
             self._weight_respawn_timer -= 1
             if self._weight_respawn_timer <= 0:
-                self.weight = WeightItem(float(W // 2 - WEIGHT_SIZE // 2),
-                                         float(H // 2 - WEIGHT_SIZE // 2))
+                wx = float(random.randint(60, W - 60 - WEIGHT_SIZE))
+                wy = float(random.randint(60, H - 60 - WEIGHT_SIZE))
+                self.weight = WeightItem(wx, wy)
                 self._weight_respawn_timer = WEIGHT_SPAWN_TICK  # reset for next cycle
 
         # 2. Move players + pickup / throw logic ------------------------
@@ -707,7 +711,72 @@ class TnTBattleGame(BaseHeadlessGame):
             vy       = dy * THROW_POWER,
         )
 
+    def _spawn_starter_crates(self, W: int, H: int):
+        """
+        Spawn 3 pickup crates near each player at game start so every player
+        has immediate access to ammo before anyone else arrives.
+        Each crate is placed at a random offset (40-90 px) from the player's
+        starting position, with up to 10 placement attempts per crate.
+        """
+        for p in self.players.values():
+            placed = 0
+            for _ in range(30):                     # max 30 attempts per player
+                if placed >= 3:
+                    break
+                angle  = random.uniform(0, 2 * math.pi)
+                radius = random.uniform(50, 100)    # 50-100 px from player centre
+                cx = p.x + p.size / 2 + math.cos(angle) * radius - CRATE_SIZE / 2
+                cy = p.y + p.size / 2 + math.sin(angle) * radius - CRATE_SIZE / 2
+                # Keep inside arena
+                cx = self.clamp(cx, 30, W - 30 - CRATE_SIZE)
+                cy = self.clamp(cy, 30, H - 30 - CRATE_SIZE)
+                # Don't overlap an already-placed starter crate
+                overlap = any(
+                    math.hypot(c.x - cx, c.y - cy) < 40
+                    for c in self.pickup_crates
+                )
+                if not overlap:
+                    self.pickup_crates.append(PickupCrate(cx, cy))
+                    placed += 1
+
+    def _try_spawn_crate_wave(self, alive: list, W: int, H: int, count: int = 4):
+        """
+        Spawn up to `count` crates distributed across distinct arena zones so
+        they appear spread out rather than clustered together.
+
+        The arena is divided into a 2×2 grid of quadrants; each crate targets
+        a different quadrant (cycling when count > 4).  Within each quadrant a
+        random position is tried up to 8 times; the crate is only placed when
+        it is far enough from every live player (>= 90 px).
+        """
+        # Four quadrant centres with ±offset jitter
+        qw, qh = W // 2, H // 2
+        quadrants = [
+            (qw // 2,          qh // 2),           # top-left
+            (qw + qw // 2,     qh // 2),           # top-right
+            (qw // 2,          qh + qh // 2),      # bottom-left
+            (qw + qw // 2,     qh + qh // 2),      # bottom-right
+        ]
+
+        for i in range(count):
+            if len(self.pickup_crates) >= MAX_CRATES:
+                break
+            qcx, qcy = quadrants[i % 4]
+            for _ in range(8):
+                x = float(self.clamp(qcx + random.randint(-qw // 3, qw // 3),
+                                     50, W - 50))
+                y = float(self.clamp(qcy + random.randint(-qh // 3, qh // 3),
+                                     50, H - 50))
+                too_close = any(
+                    math.hypot(p.x - x, p.y - y) < 90
+                    for p in alive
+                )
+                if not too_close:
+                    self.pickup_crates.append(PickupCrate(x, y))
+                    break
+
     def _try_spawn_crate(self, alive: list, W: int, H: int):
+
         """Spawn a crate not too close to any live player (mirrors original)."""
         for _ in range(10):   # up to 10 attempts
             x = float(random.randint(50, W - 50))
