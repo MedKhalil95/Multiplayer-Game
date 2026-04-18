@@ -13,16 +13,17 @@ class InputState:
     The server (or local test harness) fills this in from
     keyboard events, touch events, or bot decisions.
     """
-    __slots__ = ("player_id", "up", "down", "left", "right", "action")
+    __slots__ = ("player_id", "up", "down", "left", "right", "action", "jump")
 
     def __init__(self, player_id: str,
-                 up=False, down=False, left=False, right=False, action=False):
+                 up=False, down=False, left=False, right=False, action=False, jump=False):
         self.player_id = player_id
         self.up     = up
         self.down   = down
         self.left   = left
         self.right  = right
         self.action = action  # "throw" in TNT, unused in CrashBash
+        self.jump   = jump    # TNT Battle jump
 
     @classmethod
     def neutral(cls, player_id: str) -> "InputState":
@@ -35,12 +36,13 @@ class InputState:
                    down   = bool(d.get("down")),
                    left   = bool(d.get("left")),
                    right  = bool(d.get("right")),
-                   action = bool(d.get("action")))
+                   action = bool(d.get("action")),
+                   jump   = bool(d.get("jump")))
 
     def to_dict(self) -> dict:
         return {"up": self.up, "down": self.down,
                 "left": self.left, "right": self.right,
-                "action": self.action}
+                "action": self.action, "jump": self.jump}
 
 
 class BaseHeadlessGame(ABC):

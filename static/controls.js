@@ -21,13 +21,13 @@ const Controls = (() => {
   // ── Default key sets ─────────────────────────────────────────────────
   const DEFAULT_PROFILES = [
     // Player 1 – arrow keys
-    { name: "Player 1", keys: { up:"ArrowUp", down:"ArrowDown", left:"ArrowLeft", right:"ArrowRight", action:" " }, gamepadIndex: null },
+    { name: "Player 1", keys: { up:"ArrowUp", down:"ArrowDown", left:"ArrowLeft", right:"ArrowRight", action:" ", jump:"a" }, gamepadIndex: null },
     // Player 2 – WASD
-    { name: "Player 2", keys: { up:"w", down:"s", left:"a", right:"d", action:"f" }, gamepadIndex: null },
+    { name: "Player 2", keys: { up:"w", down:"s", left:"a", right:"d", action:"f", jump:"w" }, gamepadIndex: null },
     // Player 3 – IJKL
-    { name: "Player 3", keys: { up:"i", down:"k", left:"j", right:"l", action:";" }, gamepadIndex: null },
+    { name: "Player 3", keys: { up:"i", down:"k", left:"j", right:"l", action:";", jump:"i" }, gamepadIndex: null },
     // Player 4 – numpad
-    { name: "Player 4", keys: { up:"8", down:"5", left:"4", right:"6", action:"0" }, gamepadIndex: null },
+    { name: "Player 4", keys: { up:"8", down:"5", left:"4", right:"6", action:"0", jump:"8" }, gamepadIndex: null },
   ];
 
   // Gamepad button/axis mappings (standard layout)
@@ -41,6 +41,7 @@ const Controls = (() => {
   // ── State ────────────────────────────────────────────────────────────
   const _keysDown    = {};   // key → bool
   const _actionLatch = [false, false, false, false];  // per player
+  const _jumpLatch   = [false, false, false, false];  // per player – jump edge detection
   let   _profiles    = null; // loaded lazily
   let   _activeCount = 1;    // how many player profiles are active
 
@@ -90,9 +91,10 @@ const Controls = (() => {
     document.addEventListener("keydown", e => {
       if (_keysDown[e.key]) return; // ignore auto-repeat for action latch
       _keysDown[e.key] = true;
-      // Set action latch for any profile whose action key was just pressed
+      // Set action/jump latch for any profile whose key was just pressed
       _profiles.forEach((p, i) => {
         if (e.key === p.keys.action) _actionLatch[i] = true;
+        if (e.key === p.keys.jump)   _jumpLatch[i]   = true;
       });
     }, true);
     document.addEventListener("keyup", e => {
@@ -149,9 +151,10 @@ const Controls = (() => {
     const kLeft   = !!_keysDown[k.left];
     const kRight  = !!_keysDown[k.right];
     const kAction = !!_keysDown[k.action];
+    const kJump   = !!_keysDown[k.jump];
 
     // Gamepad
-    let gpUp = false, gpDown = false, gpLeft = false, gpRight = false, gpAction = false;
+    let gpUp = false, gpDown = false, gpLeft = false, gpRight = false, gpAction = false, gpJump = false;
     if (gp) {
       const lx = _gpAxis(gp, GP.AXIS_LX);
       const ly = _gpAxis(gp, GP.AXIS_LY);
@@ -159,7 +162,8 @@ const Controls = (() => {
       gpDown  = _gpBtn(gp, GP.DPAD_DOWN)  || ly >  GP.DEAD;
       gpLeft  = _gpBtn(gp, GP.DPAD_LEFT)  || lx < -GP.DEAD;
       gpRight = _gpBtn(gp, GP.DPAD_RIGHT) || lx >  GP.DEAD;
-      gpAction = _gpBtn(gp, GP.X) || _gpBtn(gp, GP.Y) || _gpBtn(gp, GP.A) || _gpBtn(gp, GP.B);
+      gpJump = _gpBtn(gp, GP.X) ; 
+      gpAction   = _gpBtn(gp, GP.B) ||  _gpBtn(gp, GP.A) || _gpBtn(gp, GP.Y) // D-pad up or left-stick up = jump
       // Gamepad action latch
       if (gpAction && !_gpActionWas[playerIndex]) _actionLatch[playerIndex] = true;
       _gpActionWas[playerIndex] = gpAction;
@@ -167,6 +171,8 @@ const Controls = (() => {
 
     const action = kAction || gpAction || _actionLatch[playerIndex];
     _actionLatch[playerIndex] = false;
+    const jumpLatched = _jumpLatch[playerIndex];
+    _jumpLatch[playerIndex] = false;
 
     return {
       up:     kUp    || gpUp,
@@ -174,6 +180,7 @@ const Controls = (() => {
       left:   kLeft  || gpLeft,
       right:  kRight || gpRight,
       action,
+      jump:   kJump  || gpJump || jumpLatched,
     };
   }
 
@@ -182,6 +189,7 @@ const Controls = (() => {
 
   function resetActionLatch(playerIndex) {
     _actionLatch[playerIndex] = false;
+    _jumpLatch[playerIndex]   = false;
   }
 
   // ── Config Modal ─────────────────────────────────────────────────────
@@ -224,7 +232,7 @@ const Controls = (() => {
     function render() {
       // Key rows
       const rows = document.getElementById("ctrlKeyRows");
-      const labels = { up:"↑ Up", down:"↓ Down", left:"← Left", right:"→ Right", action:"⚡ Action / Throw" };
+      const labels = { up:"↑ Up", down:"↓ Down", left:"← Left", right:"→ Right", action:"⚡ Action / Throw", jump:"⬆️ Jump (TNT Battle)" };
       rows.innerHTML = Object.entries(labels).map(([action, label]) => {
         const key = profile.keys[action];
         const isListening = listeningAction === action;

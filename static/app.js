@@ -722,6 +722,7 @@ function onMsg(ev){
   if(evt==="game_starting"){
     showScreen("gameScreen");
     startInputLoop();
+    _syncJumpBtn(S.gameType);
     // On touch devices auto-fullscreen so the arena fills the screen immediately
     if(window.matchMedia("(pointer:coarse)").matches && !_isFullscreen()){
       if(_fsSupported){
@@ -1004,10 +1005,12 @@ function buildInput(){
   const k = S.keys;
   const action = !!(k[keyBindings.action]) || _actionLatch;
   _actionLatch = false;   // consume latch — clears after exactly one poll
+  const jump = !!(k[keyBindings.jump]) || _jumpLatch;
+  _jumpLatch = false;
   return {
     up:     !!(k[keyBindings.up]),    down:  !!(k[keyBindings.down]),
     left:   !!(k[keyBindings.left]),  right: !!(k[keyBindings.right]),
-    action,
+    action, jump,
   };
 }
 
@@ -1201,9 +1204,14 @@ _applyCtrlMode();
 
 // ═══════════════════════════════════════════════════════════ ACTION LATCH
 let _actionLatch = false;
+let _jumpLatch   = false;
 
 function latchAction(){
   _actionLatch = true;
+}
+
+function latchJump(){
+  _jumpLatch = true;
 }
 
 (function(){
@@ -1214,6 +1222,27 @@ function latchAction(){
   btn.addEventListener("mousedown",  ()=>{ latchAction(); btn.style.transform="scale(.88)"; });
   btn.addEventListener("mouseup",    ()=>{ btn.style.transform=""; });
 })();
+
+(function(){
+  const btn = document.getElementById("jumpBtn");
+  if(!btn) return;
+  btn.addEventListener("touchstart",  e=>{ e.preventDefault(); latchJump(); btn.style.transform="scale(.88)"; }, {passive:false});
+  btn.addEventListener("touchend",    e=>{ e.preventDefault(); btn.style.transform=""; }, {passive:false});
+  btn.addEventListener("touchcancel", e=>{ e.preventDefault(); btn.style.transform=""; }, {passive:false});
+  btn.addEventListener("mousedown",  ()=>{ latchJump(); btn.style.transform="scale(.88)"; });
+  btn.addEventListener("mouseup",    ()=>{ btn.style.transform=""; });
+})();
+
+/** Show jump button only during tnt_battle on touch devices */
+function _syncJumpBtn(gameType){
+  const btn = document.getElementById("jumpBtn");
+  if(!btn) return;
+  const isTNT    = gameType === "tnt_battle";
+  const isTouch  = window.matchMedia("(pointer:coarse)").matches;
+  btn.style.display = (isTNT && isTouch) ? "flex" : "none";
+  btn.style.alignItems = "center";
+  btn.style.justifyContent = "center";
+}
 
 document.getElementById("mobileControls").style.display =
   window.matchMedia("(pointer:coarse)").matches ? "flex" : "none";
@@ -1420,7 +1449,7 @@ function playerName(p){
   return S.pidToName[p.player_id] || `P${p.number}`;
 }
 
-function drawPlayerLabel(p){
+function drawPlayerLabel(p, overrideY){
   const sc   = canvas._scale || 1;
   // Keep label readable: minimum effective 10px on screen, max 13px
   const size = Math.round(Math.min(13, Math.max(10, 11 / sc)));
@@ -1430,7 +1459,8 @@ function drawPlayerLabel(p){
   const label = playerName(p);
   const pw = p.w || p.size;
   const ph = p.h || p.size;
-  ctx.fillText(label, p.x + pw/2, p.y + ph/2);
+  const ey = (overrideY !== undefined) ? overrideY : p.y;
+  ctx.fillText(label, p.x + pw/2, ey + ph/2);
 }
 
 function renderCrashBash(s){
@@ -1592,9 +1622,32 @@ function renderTntBattle(s){
 
   for(const[pid,p] of Object.entries(s.players)){
     ctx.globalAlpha=p.eliminated?.18:1;
-    ctx.fillStyle=p.color; rr(p.x,p.y,p.size,p.size,6); ctx.fill();
+
+    // ── Jump visual: shadow on ground + player lifted upward ──────────
+    const jumpZ = p.jump_z || 0;  // negative = in air (height above ground), 0 = on ground
+    // jumpZ is negative when airborne; canvas Y is flipped so we ADD jumpZ to move player up
+    const liftY = jumpZ; // already negative = draws higher on canvas
+
+    if(p.is_jumping && !p.eliminated){
+      // Shadow on ground (shrinks and fades as player goes higher)
+      const heightFrac = Math.min(1, Math.abs(liftY) / 60);
+      const shadowRx = (p.size / 2) * (1 - heightFrac * 0.55);
+      const shadowA  = 0.35 * (1 - heightFrac * 0.7);
+      ctx.save();
+      ctx.globalAlpha = shadowA;
+      ctx.beginPath();
+      ctx.ellipse(p.x + p.size/2, p.y + p.size - 2, shadowRx, shadowRx * 0.38, 0, 0, Math.PI*2);
+      ctx.fillStyle = "rgba(0,0,0,1)";
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Draw player at lifted position
+    const drawY = p.y + liftY;
+    ctx.globalAlpha=p.eliminated?.18:1;
+    ctx.fillStyle=p.color; rr(p.x, drawY, p.size, p.size, 6); ctx.fill();
     if(pid===S.playerId){
-      ctx.strokeStyle="#fff"; ctx.lineWidth=2.5; rr(p.x,p.y,p.size,p.size,6); ctx.stroke();
+      ctx.strokeStyle="#fff"; ctx.lineWidth=2.5; rr(p.x, drawY, p.size, p.size, 6); ctx.stroke();
     }
     // Team mode: draw a glowing aura around teammates (not self, not enemies)
     if(s.team_mode && s.player_team && pid !== S.playerId){
@@ -1613,13 +1666,13 @@ function renderTntBattle(s){
     if(!p.eliminated){
       const hpW=p.size*(p.hp/p.max_hp);
       const hpc=p.hp>60?"#3db83d":p.hp>25?"#d4b43c":"#d43c3c";
-      ctx.fillStyle="#333"; ctx.fillRect(p.x,p.y-10,p.size,6);
-      ctx.fillStyle=hpc;    ctx.fillRect(p.x,p.y-10,hpW,6);
-      if(p.held_crate){ ctx.fillStyle="#a06428"; ctx.fillRect(p.x+p.size/2-8,p.y-24,16,14); }
+      ctx.fillStyle="#333"; ctx.fillRect(p.x, drawY-10, p.size, 6);
+      ctx.fillStyle=hpc;    ctx.fillRect(p.x, drawY-10, hpW, 6);
+      if(p.held_crate){ ctx.fillStyle="#a06428"; ctx.fillRect(p.x+p.size/2-8, drawY-24, 16, 14); }
       if(!p.held_crate && p.melee_ready){
         ctx.font="11px sans-serif"; ctx.textAlign="center";
         ctx.globalAlpha=0.75;
-        ctx.fillText("👊",p.x+p.size/2,p.y-26);
+        ctx.fillText("👊", p.x+p.size/2, drawY-26);
         ctx.globalAlpha=1;
       }
 
@@ -1632,7 +1685,7 @@ function renderTntBattle(s){
 
         // Weight descends from 80px above head down to 4px above head
         const maxDrop = 76;
-        const dropY   = p.y - 16 - maxDrop * (1 - frac);   // starts high, comes down
+        const dropY   = drawY - 16 - maxDrop * (1 - frac);   // starts high, comes down
         const pcx     = p.x + p.size / 2;
         const ws      = 32;   // weight sprite size when above head
 
@@ -1641,7 +1694,7 @@ function renderTntBattle(s){
         const shadowA  = 0.15 + (1 - frac) * 0.35;
         ctx.save();
         ctx.beginPath();
-        ctx.ellipse(pcx, p.y + p.size - 4, shadowR, shadowR * 0.4, 0, 0, Math.PI*2);
+        ctx.ellipse(pcx, drawY + p.size - 4, shadowR, shadowR * 0.4, 0, 0, Math.PI*2);
         ctx.fillStyle = `rgba(0,0,0,${shadowA})`;
         ctx.fill();
         ctx.restore();
@@ -1653,7 +1706,7 @@ function renderTntBattle(s){
         ctx.lineWidth = 1.5;
         ctx.beginPath();
         ctx.moveTo(pcx, dropY + ws);
-        ctx.lineTo(pcx, p.y - 14);
+        ctx.lineTo(pcx, drawY - 14);
         ctx.stroke();
         ctx.setLineDash([]);
         ctx.restore();
@@ -1681,14 +1734,14 @@ function renderTntBattle(s){
         // background ring
         ctx.save();
         ctx.beginPath();
-        ctx.arc(pcx, p.y + p.size/2, ringR, 0, Math.PI*2);
+        ctx.arc(pcx, drawY + p.size/2, ringR, 0, Math.PI*2);
         ctx.strokeStyle = "rgba(80,80,80,0.5)";
         ctx.lineWidth = 3; ctx.stroke();
         // foreground ring (colour shifts red as time runs out)
         const r = Math.round(255);
         const g = Math.round(200 * frac);
         ctx.beginPath();
-        ctx.arc(pcx, p.y + p.size/2, ringR, startA, endA);
+        ctx.arc(pcx, drawY + p.size/2, ringR, startA, endA);
         ctx.strokeStyle = `rgb(${r},${g},0)`;
         ctx.lineWidth = 3; ctx.stroke();
         ctx.restore();
@@ -1699,12 +1752,13 @@ function renderTntBattle(s){
         ctx.font = `bold 11px sans-serif`;
         ctx.textAlign = "center"; ctx.textBaseline = "bottom";
         ctx.fillStyle = frac < 0.3 ? "#ff4444" : "#ffcc00";
-        ctx.fillText(`${secsLeft}s`, pcx, p.y - 16);
+        ctx.fillText(`${secsLeft}s`, pcx, drawY - 16);
         ctx.restore();
       }
     }
     ctx.globalAlpha=1;
-    drawPlayerLabel(p);
+    // Pass drawY offset so label renders at the lifted position
+    drawPlayerLabel(p, drawY);
   }
 
   for(const ev of s.hit_events||[]){
@@ -1757,7 +1811,7 @@ function updateHud(s){
         const name = playerName(p);
         return `<div class="hud-player${elim}">
           <div class="hud-color" style="background:${p.color}"></div>
-          <span>${name}${bot}</span>
+          <span class="hud-name">${name}${bot}</span>
           <span class="hud-score">${p.eliminated?"OUT":val}</span>
         </div>`;
       }).join("");
@@ -2265,6 +2319,8 @@ window.buildInput = function() {
   const k = S.keys;
   const touchAction = !!k[keyBindings.action] || _actionLatch;
   _actionLatch = false; // consume latch
+  const touchJump = !!k[keyBindings.jump] || _jumpLatch;
+  _jumpLatch = false;
 
   // Merge: any source being true counts as pressed
   return {
@@ -2273,5 +2329,6 @@ window.buildInput = function() {
     left:   ctrl.left  || !!k[keyBindings.left],
     right:  ctrl.right || !!k[keyBindings.right],
     action: ctrl.action || touchAction,
+    jump:   ctrl.jump   || touchJump,
   };
 };

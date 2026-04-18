@@ -36,6 +36,10 @@ MAX_CRATES     = 8
 CRATE_SPAWN_LO = 120        # ticks (2 s at 60 tps)
 CRATE_SPAWN_HI = 240        # 4 s
 
+JUMP_VELOCITY  = -14.0       # px/tick initial vertical velocity (upward)
+JUMP_GRAVITY   = 1.2         # px/tick² deceleration
+JUMP_COOLDOWN  = 24          # ticks before jumping again (0.4s)
+
 PLAYER_COLORS = ["#5050DC", "#50C864", "#DCDC50","#DC5050"]
 
 # ── melee punch (action when no crate held) ───────────────────────────
@@ -88,6 +92,11 @@ class TNTPlayer:
         self.melee_cooldown = 0         # ticks until next punch is allowed
         self.has_weight     = False     # True while cursed by 500 lbs
         self.weight_timer   = 0         # ticks remaining before elimination
+        # Jump state
+        self.is_jumping     = False     # True while in the air
+        self.jump_z         = 0.0      # virtual height (pixels above ground)
+        self.jump_vz        = 0.0      # vertical velocity
+        self.jump_cooldown  = 0        # ticks until next jump allowed
 
     @property
     def cx(self): return self.x + self.size / 2
@@ -118,6 +127,8 @@ class TNTPlayer:
             "melee_ready": self.melee_cooldown <= 0,
             "has_weight":  self.has_weight,
             "weight_timer": self.weight_timer,
+            "is_jumping":  self.is_jumping,
+            "jump_z":      round(self.jump_z, 1),
         }
 
 
@@ -484,6 +495,9 @@ class TnTBattleGame(BaseHeadlessGame):
             for p in alive:
                 if p.player_id == tc.owner_id:
                     continue
+                # Jumping players dodge crates (they are in the air)
+                if p.is_jumping and p.jump_z < -8:
+                    continue
                 # Team mode: skip teammates (no friendly fire from crates)
                 if self.teams and self.player_team.get(p.player_id) == self.player_team.get(tc.owner_id):
                     continue
@@ -517,10 +531,7 @@ class TnTBattleGame(BaseHeadlessGame):
             if not ex.alive():
                 self.explosions.remove(ex)
 
-        # 5. Tick stun countdown -------------------------------------
-        for p in alive:
-            if p.stun > 0:
-                p.stun -= 1
+        # 5. (stun ticked inside _move_player)
 
         # 6. Win check -----------------------------------------------
         if self.teams:
@@ -596,9 +607,24 @@ class TnTBattleGame(BaseHeadlessGame):
 
     def _move_player(self, p: TNTPlayer, inp: InputState, W: int, H: int):
         if p.stun > 0:
+            p.stun -= 1
+            # Still update jump physics while stunned
+            if p.is_jumping:
+                p.jump_z  += p.jump_vz
+                p.jump_vz += JUMP_GRAVITY
+                if p.jump_z >= 0 and p.jump_vz > 0:
+                    p.jump_z    = 0.0
+                    p.jump_vz   = 0.0
+                    p.is_jumping = False
+            if p.jump_cooldown > 0:
+                p.jump_cooldown -= 1
             return
 
         spd  = PLAYER_SPEED
+        # Jumping players move a bit faster (momentum feel)
+        if p.is_jumping:
+            spd = int(spd * 1.25)
+
         move_x, move_y = 0.0, 0.0
 
         if inp.up:    p.y -= spd; move_y = -1.0
@@ -609,6 +635,24 @@ class TnTBattleGame(BaseHeadlessGame):
         if move_x != 0 or move_y != 0:
             p.last_move_x = move_x
             p.last_move_y = move_y
+
+        # ── Jump physics ────────────────────────────────────────────────
+        if inp.jump and not p.is_jumping and p.jump_cooldown <= 0:
+            p.is_jumping    = True
+            p.jump_vz       = JUMP_VELOCITY   # negative = going up (height increasing)
+            p.jump_z        = 0.0
+            p.jump_cooldown = JUMP_COOLDOWN
+
+        if p.is_jumping:
+            p.jump_z  += p.jump_vz        # jump_z increases upward (negative vz = rising)
+            p.jump_vz += JUMP_GRAVITY     # gravity pulls vz back toward positive (downward)
+            if p.jump_z >= 0 and p.jump_vz > 0:   # crossed back to ground while descending
+                p.jump_z    = 0.0
+                p.jump_vz   = 0.0
+                p.is_jumping = False
+
+        if p.jump_cooldown > 0:
+            p.jump_cooldown -= 1
 
         # boundary clamp (mirrors original: max 20, min w-20-size)
         p.x = self.clamp(p.x, 20, W - 20 - p.size)

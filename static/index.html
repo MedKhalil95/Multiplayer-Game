@@ -123,14 +123,22 @@ input[type=text]:focus,select:focus{border-color:var(--acc)}
 
 /* game screen */
 .game-hud{width:100%;max-width:800px;display:flex;align-items:center;
-          justify-content:space-between;padding:8px 4px;gap:8px;flex-shrink:0}
-.hud-players{display:flex;flex-wrap:wrap;gap:6px;flex:1}
-.hud-player{display:flex;align-items:center;gap:5px;font-size:.8rem;padding:3px 7px;
-            background:var(--surf);border-radius:7px;border:1.5px solid var(--border)}
+          justify-content:space-between;padding:6px 4px;gap:6px;flex-shrink:0}
+.hud-players{display:flex;flex-wrap:wrap;gap:4px;flex:1;min-width:0}
+.hud-player{display:flex;align-items:center;gap:4px;font-size:.78rem;padding:2px 6px;
+            background:var(--surf);border-radius:7px;border:1.5px solid var(--border);
+            min-width:0;max-width:100%}
 .hud-player.hud-elim{opacity:.4;text-decoration:line-through}
-.hud-color{width:12px;height:12px;border-radius:3px;flex-shrink:0}
-.hud-score{font-weight:700;color:var(--acc);margin-left:3px}
-.hud-bot{font-size:.65rem;color:var(--muted);margin-left:2px}
+.hud-color{width:10px;height:10px;border-radius:3px;flex-shrink:0}
+.hud-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:70px}
+.hud-score{font-weight:700;color:var(--acc);margin-left:2px;flex-shrink:0}
+.hud-bot{font-size:.62rem;color:var(--muted);margin-left:2px}
+@media(pointer:coarse){
+  .game-hud{padding:4px 2px;gap:4px}
+  .hud-player{font-size:.7rem;padding:2px 5px;gap:3px}
+  .hud-name{max-width:52px}
+  .hud-color{width:8px;height:8px}
+}
 
 #gameCanvas{display:block;max-width:100%;border-radius:12px;
             box-shadow:0 8px 40px rgba(0,0,0,.6)}
@@ -168,19 +176,24 @@ input[type=text]:focus,select:focus{border-color:var(--acc)}
 .joy-arrow.lt::after{content:"◀"}
 .joy-arrow.rt::after{content:"▶"}
 
-.dpad{position:absolute;inset:0;display:none;
-      display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr)}
-.dpad-btn{display:flex;align-items:center;justify-content:center;
-          font-size:1.2rem;cursor:pointer;border-radius:6px;
-          background:rgba(255,255,255,.06);border:1.5px solid rgba(255,255,255,.1);
-          transition:.1s;-webkit-tap-highlight-color:transparent;
-          user-select:none}
+.dpad{position:absolute;inset:0;display:none}
+.dpad-btn{
+  position:absolute;
+  width:42%;height:42%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:1.3rem;cursor:pointer;border-radius:8px;
+  background:rgba(255,255,255,.08);border:1.5px solid rgba(255,255,255,.12);
+  transition:.1s;-webkit-tap-highlight-color:transparent;
+  user-select:none;touch-action:none}
 .dpad-btn:active,.dpad-btn.pressed{background:var(--acc);border-color:var(--acc)}
-.dpad-btn.up{grid-column:2;grid-row:1}
-.dpad-btn.dn{grid-column:2;grid-row:3}
-.dpad-btn.lt{grid-column:1;grid-row:2}
-.dpad-btn.rt{grid-column:3;grid-row:2}
-.dpad-center{grid-column:2;grid-row:2;background:rgba(255,255,255,.03);border-radius:6px}
+.dpad-btn.up{top:0;left:50%;transform:translateX(-50%)}
+.dpad-btn.dn{bottom:0;left:50%;transform:translateX(-50%)}
+.dpad-btn.lt{left:0;top:50%;transform:translateY(-50%)}
+.dpad-btn.rt{right:0;top:50%;transform:translateY(-50%)}
+.dpad-center{
+  position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  width:24%;height:24%;
+  background:rgba(255,255,255,.04);border-radius:50%;pointer-events:none}
 .ctrl-toggle{position:absolute;bottom:-26px;left:50%;transform:translateX(-50%);
              background:none;border:none;color:var(--muted);font-size:.7rem;
              cursor:pointer;white-space:nowrap}
@@ -190,6 +203,22 @@ input[type=text]:focus,select:focus{border-color:var(--acc)}
             -webkit-tap-highlight-color:transparent;
             box-shadow:0 4px 16px rgba(255,101,132,.4);}
 .action-btn:active{transform:scale(.9);box-shadow:none}
+
+.right-btns{display:flex;flex-direction:column;align-items:center;gap:10px;flex-shrink:0}
+
+.jump-btn{
+  width:64px;height:64px;
+  border-radius:50%;
+  background:rgba(80,200,100,.18);
+  border:2px solid rgba(80,200,100,.45);
+  color:#fff;font-size:1.4rem;
+  cursor:pointer;font-weight:800;
+  -webkit-tap-highlight-color:transparent;
+  display:none; /* shown only in TNT Battle via JS */
+  box-shadow:0 3px 12px rgba(80,200,100,.25);
+  transition:background .12s,box-shadow .12s;
+}
+.jump-btn:active{transform:scale(.9);background:rgba(80,200,100,.38);box-shadow:none}
 
 /* overlay */
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.78);
@@ -1140,7 +1169,10 @@ hr{border:none;border-top:1px solid var(--border);width:100%;margin:18px 0}
       </div>
       <button class="ctrl-toggle" id="ctrlToggle" onclick="toggleCtrlMode()">Switch to D-pad</button>
     </div>
-    <button class="action-btn" id="actionBtn">🎯</button>
+    <div class="right-btns" id="rightBtns">
+      <button class="jump-btn" id="jumpBtn">⬆️</button>
+      <button class="action-btn" id="actionBtn">🎯</button>
+    </div>
   </div>
 </div>
 
