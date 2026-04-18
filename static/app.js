@@ -755,6 +755,7 @@ function onMsg(ev){
     if(firstFrame){
       requestAnimationFrame(() => requestAnimationFrame(() => {
         if(S.lastState) renderGame(S.lastState);
+        _syncJumpBtn(msg.game_type || S.gameType);
       }));
     }
     if(msg.game_over){ stopInputLoop(); showGameOver(msg); }
@@ -1237,11 +1238,15 @@ function latchJump(){
 function _syncJumpBtn(gameType){
   const btn = document.getElementById("jumpBtn");
   if(!btn) return;
-  const isTNT    = gameType === "tnt_battle";
-  const isTouch  = window.matchMedia("(pointer:coarse)").matches;
-  btn.style.display = (isTNT && isTouch) ? "flex" : "none";
-  btn.style.alignItems = "center";
+  const isTNT   = gameType === "tnt_battle";
+  const isTouch = window.matchMedia("(pointer:coarse)").matches
+                  || ('ontouchstart' in window)
+                  || window.innerWidth <= 768;
+  const show = isTNT && isTouch;
+  btn.style.display        = show ? "flex" : "none";
+  btn.style.alignItems     = "center";
   btn.style.justifyContent = "center";
+  btn.style.flexDirection  = "column";
 }
 
 document.getElementById("mobileControls").style.display =
@@ -2290,44 +2295,42 @@ window.leaveGame = function() {
   showScreen('modeScreen');
 };
 
-// ── Sync Controls → legacy keyBindings on startup ─────────────────────
-// The existing buildInput() in app.js reads from keyBindings (P1 only, online).
-// We keep them in sync so online play uses Controls profile 0.
-(function syncLegacyBindings() {
-  const p0 = Controls.getProfiles()[0];
-  if (p0) {
-    keyBindings = { ...p0.keys };
-    localStorage.setItem('kb', JSON.stringify(keyBindings));
-  }
-})();
+// ── syncLegacyBindings removed ────────────────────────────────────────
+// Do NOT overwrite keyBindings from Controls profiles.
+// keyBindings must stay as DEFAULT_KEYS (ArrowUp/Down/Left/Right/Space)
+// because the mobile joystick/dpad writes into S.keys using those exact keys.
 
-// ── Override buildInput for online mode to use Controls ───────────────
-// The original buildInput() reads from S.keys + keyBindings + _actionLatch.
-// We augment it to also pick up gamepad input from Controls.getInput(0).
-// IMPORTANT: mobile touch (joystick / d-pad / action button) writes into
-// S.keys and the local _actionLatch — we must OR those in so touch still works.
-const _origBuildInput = buildInput;
+// ── Override buildInput: merge mobile touch + desktop keyboard/gamepad ──
+//
+// The joystick and dpad write into S.keys using DEFAULT_KEYS bindings
+// (ArrowUp / ArrowDown / ArrowLeft / ArrowRight).  We read those directly
+// so mobile movement always works regardless of what keyBindings contains.
+// For desktop, Controls.getInput(0) handles keyboard + gamepad.
+// Action/jump latches are set by the on-screen buttons and consumed here.
 window.buildInput = function() {
   if (LocalMode.isActive()) {
-    // Should not be called directly in local mode (each player has own loop)
     return Controls.getInput(0);
   }
-  // Get keyboard + gamepad state from Controls profile 0
+
+  // Mobile touch: joystick/dpad writes into S.keys with DEFAULT_KEYS values
+  const k = S.keys;
+  const touchUp    = !!k[DEFAULT_KEYS.up];
+  const touchDown  = !!k[DEFAULT_KEYS.down];
+  const touchLeft  = !!k[DEFAULT_KEYS.left];
+  const touchRight = !!k[DEFAULT_KEYS.right];
+
+  // Consume on-screen button latches
+  const touchAction = _actionLatch; _actionLatch = false;
+  const touchJump   = _jumpLatch;   _jumpLatch   = false;
+
+  // Desktop keyboard + gamepad via Controls profile 0
   const ctrl = Controls.getInput(0);
 
-  // Get mobile touch state from legacy S.keys / keyBindings / _actionLatch
-  const k = S.keys;
-  const touchAction = !!k[keyBindings.action] || _actionLatch;
-  _actionLatch = false; // consume latch
-  const touchJump = !!k[keyBindings.jump] || _jumpLatch;
-  _jumpLatch = false;
-
-  // Merge: any source being true counts as pressed
   return {
-    up:     ctrl.up    || !!k[keyBindings.up],
-    down:   ctrl.down  || !!k[keyBindings.down],
-    left:   ctrl.left  || !!k[keyBindings.left],
-    right:  ctrl.right || !!k[keyBindings.right],
+    up:     ctrl.up     || touchUp,
+    down:   ctrl.down   || touchDown,
+    left:   ctrl.left   || touchLeft,
+    right:  ctrl.right  || touchRight,
     action: ctrl.action || touchAction,
     jump:   ctrl.jump   || touchJump,
   };
