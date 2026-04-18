@@ -1234,12 +1234,12 @@ function latchJump(){
 })();
 
 /** Show jump button only during tnt_battle on touch devices */
+/** Show jump button on touch devices for all game types */
 function _syncJumpBtn(gameType){
   const btn = document.getElementById("jumpBtn");
   if(!btn) return;
-  const isTNT    = gameType === "tnt_battle";
   const isTouch  = window.matchMedia("(pointer:coarse)").matches;
-  btn.style.display = (isTNT && isTouch) ? "flex" : "none";
+  btn.style.display = isTouch ? "flex" : "none";
   btn.style.alignItems = "center";
   btn.style.justifyContent = "center";
 }
