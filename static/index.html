@@ -207,18 +207,23 @@ input[type=text]:focus,select:focus{border-color:var(--acc)}
 .right-btns{display:flex;flex-direction:column;align-items:center;gap:10px;flex-shrink:0}
 
 .jump-btn{
-  width:64px;height:64px;
+  width:72px;height:72px;
   border-radius:50%;
-  background:rgba(80,200,100,.18);
-  border:2px solid rgba(80,200,100,.45);
-  color:#fff;font-size:1.4rem;
+  background:rgba(80,200,100,.28);
+  border:2.5px solid rgba(80,200,100,.75);
+  color:#fff;font-size:1.5rem;
   cursor:pointer;font-weight:800;
   -webkit-tap-highlight-color:transparent;
   display:none; /* shown only in TNT Battle via JS */
-  box-shadow:0 3px 12px rgba(80,200,100,.25);
-  transition:background .12s,box-shadow .12s;
+  align-items:center;justify-content:center;
+  box-shadow:0 3px 16px rgba(80,200,100,.4);
+  transition:background .12s,box-shadow .12s,transform .08s;
+  flex-direction:column;
+  gap:1px;
+  line-height:1;
 }
-.jump-btn:active{transform:scale(.9);background:rgba(80,200,100,.38);box-shadow:none}
+.jump-btn:active{transform:scale(.88);background:rgba(80,200,100,.55);box-shadow:none}
+.jump-btn-label{font-size:.55rem;font-weight:700;letter-spacing:.04em;color:rgba(255,255,255,.75);text-transform:uppercase}
 
 /* overlay */
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.78);
@@ -1170,7 +1175,7 @@ hr{border:none;border-top:1px solid var(--border);width:100%;margin:18px 0}
       <button class="ctrl-toggle" id="ctrlToggle" onclick="toggleCtrlMode()">Switch to D-pad</button>
     </div>
     <div class="right-btns" id="rightBtns">
-      <button class="jump-btn" id="jumpBtn">⬆️</button>
+      <button class="jump-btn" id="jumpBtn">⬆️<span class="jump-btn-label">JUMP</span></button>
       <button class="action-btn" id="actionBtn">🎯</button>
     </div>
   </div>
