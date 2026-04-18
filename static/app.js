@@ -263,8 +263,11 @@ function switchTab(tab, btn){
 }
 
 // ═══════════════════════════════════════════════════════════ KEY CONFIG
-const DEFAULT_KEYS = {up:"ArrowUp",down:"ArrowDown",left:"ArrowLeft",right:"ArrowRight",action:" "};
-let keyBindings = JSON.parse(localStorage.getItem("kb")||"null") || {...DEFAULT_KEYS};
+const DEFAULT_KEYS = {up:"ArrowUp",down:"ArrowDown",left:"ArrowLeft",right:"ArrowRight",action:" ",jump:"ArrowUp"};
+// Always reset to DEFAULT_KEYS on load — stored bindings from a previous session
+// may have been corrupted by the old syncLegacyBindings code.
+let keyBindings = {...DEFAULT_KEYS};
+localStorage.setItem("kb", JSON.stringify(keyBindings));
 let listeningKey = null;
 
 function openKeyScreen(){ showKeyConfig(); showScreen("keyScreen"); }
@@ -755,7 +758,6 @@ function onMsg(ev){
     if(firstFrame){
       requestAnimationFrame(() => requestAnimationFrame(() => {
         if(S.lastState) renderGame(S.lastState);
-        _syncJumpBtn(msg.game_type || S.gameType);
       }));
     }
     if(msg.game_over){ stopInputLoop(); showGameOver(msg); }
@@ -1240,19 +1242,21 @@ function _syncJumpBtn(gameType){
   if(!btn) return;
   const isTNT   = gameType === "tnt_battle";
   const isTouch = window.matchMedia("(pointer:coarse)").matches
-                  || ('ontouchstart' in window)
-                  || window.innerWidth <= 900;
+                || ('ontouchstart' in window)
+                || navigator.maxTouchPoints > 0;
   const show = isTNT && isTouch;
   btn.style.display        = show ? "flex" : "none";
   btn.style.alignItems     = "center";
   btn.style.justifyContent = "center";
-  btn.style.flexDirection  = "column";
 }
 
-document.getElementById("mobileControls").style.display =
-  window.matchMedia("(pointer:coarse)").matches ? "flex" : "none";
+// Show mobile controls on any touch-capable device
+const _isTouchDevice = window.matchMedia("(pointer:coarse)").matches
+                     || ('ontouchstart' in window)
+                     || navigator.maxTouchPoints > 0;
+document.getElementById("mobileControls").style.display = _isTouchDevice ? "flex" : "none";
 // Re-measure after controls appear so canvas height is correct
-if(window.matchMedia("(pointer:coarse)").matches){
+if(_isTouchDevice){
   requestAnimationFrame(() => requestAnimationFrame(() => {
     if(S.lastState) renderGame(S.lastState);
   }));
@@ -2296,44 +2300,10 @@ window.leaveGame = function() {
 };
 
 // ── Sync Controls → legacy keyBindings on startup ─────────────────────
-// The existing buildInput() in app.js reads from keyBindings (P1 only, online).
-// We keep them in sync so online play uses Controls profile 0.
-(function syncLegacyBindings() {
-  const p0 = Controls.getProfiles()[0];
-  if (p0) {
-    keyBindings = { ...p0.keys };
-    localStorage.setItem('kb', JSON.stringify(keyBindings));
-  }
-})();
+// REMOVED: syncLegacyBindings was overwriting keyBindings with Controls profile
+// keys, breaking the joystick which writes into S.keys using the original
+// keyBindings. keyBindings must stay as DEFAULT_KEYS so the two systems agree.
 
-// ── Override buildInput for online mode to use Controls ───────────────
-// The original buildInput() reads from S.keys + keyBindings + _actionLatch.
-// We augment it to also pick up gamepad input from Controls.getInput(0).
-// IMPORTANT: mobile touch (joystick / d-pad / action button) writes into
-// S.keys and the local _actionLatch — we must OR those in so touch still works.
-const _origBuildInput = buildInput;
-window.buildInput = function() {
-  if (LocalMode.isActive()) {
-    // Should not be called directly in local mode (each player has own loop)
-    return Controls.getInput(0);
-  }
-  // Get keyboard + gamepad state from Controls profile 0
-  const ctrl = Controls.getInput(0);
-
-  // Get mobile touch state from legacy S.keys / keyBindings / _actionLatch
-  const k = S.keys;
-  const touchAction = !!k[keyBindings.action] || _actionLatch;
-  _actionLatch = false; // consume latch
-  const touchJump = !!k[keyBindings.jump] || _jumpLatch;
-  _jumpLatch = false;
-
-  // Merge: any source being true counts as pressed
-  return {
-    up:     ctrl.up    || !!k[keyBindings.up],
-    down:   ctrl.down  || !!k[keyBindings.down],
-    left:   ctrl.left  || !!k[keyBindings.left],
-    right:  ctrl.right || !!k[keyBindings.right],
-    action: ctrl.action || touchAction,
-    jump:   ctrl.jump   || touchJump,
-  };
-};
+// ── buildInput already handles mobile correctly ───────────────────────
+// The joystick/dpad write into S.keys[keyBindings.X] and buildInput reads
+// S.keys[keyBindings.X] — same object, same keys. No override needed.
