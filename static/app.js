@@ -1238,7 +1238,7 @@ function latchJump(){
 function _syncJumpBtn(gameType){
   const btn = document.getElementById("jumpBtn");
   if(!btn) return;
-  const isTouch  = window.matchMedia("(pointer:coarse)").matches;
+  const isTouch = window.matchMedia("(pointer:coarse)").matches;
   btn.style.display = isTouch ? "flex" : "none";
   btn.style.alignItems = "center";
   btn.style.justifyContent = "center";
@@ -1246,6 +1246,8 @@ function _syncJumpBtn(gameType){
 
 document.getElementById("mobileControls").style.display =
   window.matchMedia("(pointer:coarse)").matches ? "flex" : "none";
+  // Sync jump button visibility on load too
+_syncJumpBtn(S.gameType);
 // Re-measure after controls appear so canvas height is correct
 if(window.matchMedia("(pointer:coarse)").matches){
   requestAnimationFrame(() => requestAnimationFrame(() => {
