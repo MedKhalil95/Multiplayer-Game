@@ -122,10 +122,8 @@ input[type=text]:focus,select:focus{border-color:var(--acc)}
 .btn-move:hover{background:var(--acc);color:#000}
 
 /* game screen */
-#gameScreen{position:relative}
 .game-hud{width:100%;max-width:800px;display:flex;align-items:center;
-          justify-content:space-between;padding:6px 4px;gap:6px;flex-shrink:0;
-          position:relative;z-index:10}
+          justify-content:space-between;padding:6px 4px;gap:6px;flex-shrink:0}
 .hud-players{display:flex;flex-wrap:wrap;gap:4px;flex:1;min-width:0}
 .hud-player{display:flex;align-items:center;gap:4px;font-size:.78rem;padding:2px 6px;
             background:var(--surf);border-radius:7px;border:1.5px solid var(--border);
@@ -135,7 +133,7 @@ input[type=text]:focus,select:focus{border-color:var(--acc)}
 .hud-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:70px}
 .hud-score{font-weight:700;color:var(--acc);margin-left:2px;flex-shrink:0}
 .hud-bot{font-size:.62rem;color:var(--muted);margin-left:2px}
-@media(pointer:coarse),(max-width:900px){
+@media(pointer:coarse){
   .game-hud{padding:4px 2px;gap:4px}
   .hud-player{font-size:.7rem;padding:2px 5px;gap:3px}
   .hud-name{max-width:52px}
@@ -143,8 +141,7 @@ input[type=text]:focus,select:focus{border-color:var(--acc)}
 }
 
 #gameCanvas{display:block;max-width:100%;border-radius:12px;
-            box-shadow:0 8px 40px rgba(0,0,0,.6);
-            touch-action:none;position:relative;z-index:1}
+            box-shadow:0 8px 40px rgba(0,0,0,.6)}
 
 /* fullscreen button */
 .fs-btn{background:var(--surf);border:1.5px solid var(--border);border-radius:8px;
@@ -154,22 +151,10 @@ input[type=text]:focus,select:focus{border-color:var(--acc)}
             stroke-linecap:round;stroke-linejoin:round;transition:.15s}
 .fs-btn:hover svg{stroke:var(--text)}
 
-/* fake fullscreen — applied by JS when requestFullscreen is blocked on mobile */
-.fake-fs{position:fixed!important;inset:0!important;z-index:500!important;
-         width:100vw!important;height:100vh!important;
-         background:var(--bg)!important;overflow:hidden!important;
-         display:flex!important;flex-direction:column!important;
-         align-items:center!important;justify-content:flex-start!important;
-         padding:4px 0 0!important}
-body.fs-open{overflow:hidden!important}
-.fake-fs .game-hud{z-index:520;width:100%}
-.fake-fs #gameCanvas{z-index:510}
-.fake-fs .mobile-controls{z-index:520;width:100%}
-
-/* mobile controls — hidden by default, shown by JS on touch devices */
-.mobile-controls{display:none;align-items:center;
-  justify-content:space-between;width:100%;max-width:800px;
-  padding:10px 8px;gap:16px;position:relative;z-index:10}
+/* mobile controls */
+.mobile-controls{display:none}
+@media(pointer:coarse){.mobile-controls{display:flex;align-items:center;
+  justify-content:space-between;width:100%;max-width:800px;padding:10px 8px;gap:16px}}
 .ctrl-wrap{position:relative;width:160px;height:160px}
 .joystick-zone{position:absolute;inset:0;border-radius:50%;
                background:rgba(255,255,255,.06);border:2px solid rgba(255,255,255,.1);
@@ -1185,7 +1170,7 @@ hr{border:none;border-top:1px solid var(--border);width:100%;margin:18px 0}
       <button class="ctrl-toggle" id="ctrlToggle" onclick="toggleCtrlMode()">Switch to D-pad</button>
     </div>
     <div class="right-btns" id="rightBtns">
-      <button class="jump-btn" id="jumpBtn" style="flex-direction:column;gap:2px">⬆️<span style="font-size:.5rem;font-weight:700;letter-spacing:.05em;color:rgba(255,255,255,.8)">JUMP</span></button>
+      <button class="jump-btn" id="jumpBtn">⬆️</button>
       <button class="action-btn" id="actionBtn">🎯</button>
     </div>
   </div>

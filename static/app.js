@@ -724,7 +724,7 @@ function onMsg(ev){
     startInputLoop();
     _syncJumpBtn(S.gameType);
     // On touch devices auto-fullscreen so the arena fills the screen immediately
-    if(_isTouchDevice && !_isFullscreen()){
+    if(window.matchMedia("(pointer:coarse)").matches && !_isFullscreen()){
       if(_fsSupported){
         const el  = document.getElementById("gameScreen");
         const req = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
@@ -1001,27 +1001,16 @@ function _hideCountdown(){
 }
 
 // ═══════════════════════════════════════════════════════════ INPUT
-// _mobileState is the single source of truth for on-screen touch controls.
-// The joystick, d-pad, action button and jump button all write here directly.
-// buildInput() reads it plus S.keys (keyboard) — no keyBindings involved for mobile.
-const _mobileState = {up:false,down:false,left:false,right:false,action:false,jump:false};
-
 function buildInput(){
-  // Consume mobile action/jump (these are latch-style: set on press, cleared here)
-  const mobAction = _mobileState.action; _mobileState.action = false;
-  const mobJump   = _mobileState.jump;   _mobileState.jump   = false;
-  // Keyboard latches
-  const kbAction  = _actionLatch; _actionLatch = false;
-  const kbJump    = _jumpLatch;   _jumpLatch   = false;
-  // Keyboard held keys
   const k = S.keys;
+  const action = !!(k[keyBindings.action]) || _actionLatch;
+  _actionLatch = false;   // consume latch — clears after exactly one poll
+  const jump = !!(k[keyBindings.jump]) || _jumpLatch;
+  _jumpLatch = false;
   return {
-    up:     _mobileState.up    || !!(k[keyBindings.up]),
-    down:   _mobileState.down  || !!(k[keyBindings.down]),
-    left:   _mobileState.left  || !!(k[keyBindings.left]),
-    right:  _mobileState.right || !!(k[keyBindings.right]),
-    action: mobAction || kbAction || !!(k[keyBindings.action]),
-    jump:   mobJump   || kbJump   || !!(k[keyBindings.jump]),
+    up:     !!(k[keyBindings.up]),    down:  !!(k[keyBindings.down]),
+    left:   !!(k[keyBindings.left]),  right: !!(k[keyBindings.right]),
+    action, jump,
   };
 }
 
@@ -1063,7 +1052,7 @@ function _applyCtrlMode(){
     dpad.style.display = 'none';
     if(label) label.textContent = 'Switch to D-pad';
   }
-  ['up','down','left','right'].forEach(d=>{ _mobileState[d] = false; });
+  ['up','down','left','right'].forEach(d=>{ S.keys[keyBindings[d]] = false; });
 }
 
 // ── Joystick ──────────────────────────────────────────────────────────
@@ -1099,10 +1088,10 @@ function _applyCtrlMode(){
     const goUp    = dy < -DEAD_AXIS;
     const goDn    = dy >  DEAD_AXIS;
 
-    _mobileState.left  = goLeft;
-    _mobileState.right = goRight;
-    _mobileState.up    = goUp;
-    _mobileState.down  = goDn;
+    S.keys[keyBindings.left]  = goLeft;
+    S.keys[keyBindings.right] = goRight;
+    S.keys[keyBindings.up]    = goUp;
+    S.keys[keyBindings.down]  = goDn;
 
     setArrow('lt', goLeft);
     setArrow('rt', goRight);
@@ -1131,10 +1120,10 @@ function _applyCtrlMode(){
     e.preventDefault();
     active = false;
     knob.style.transform = 'translate(-50%, -50%)';
-    _mobileState.up    = false;
-    _mobileState.down  = false;
-    _mobileState.left  = false;
-    _mobileState.right = false;
+    S.keys[keyBindings.up]    = false;
+    S.keys[keyBindings.down]  = false;
+    S.keys[keyBindings.left]  = false;
+    S.keys[keyBindings.right] = false;
     setArrow('up',false); setArrow('dn',false);
     setArrow('lt',false); setArrow('rt',false);
   }
@@ -1153,7 +1142,7 @@ function _applyCtrlMode(){
   const MAP = {dpUp:'up', dpDn:'down', dpLt:'left', dpRt:'right'};
 
   function setDpadKey(binding, val){
-    _mobileState[binding] = val;
+    S.keys[keyBindings[binding]] = val;
     const elId = Object.keys(MAP).find(k => MAP[k] === binding);
     if(elId){
       const el = document.getElementById(elId);
@@ -1227,21 +1216,20 @@ function latchJump(){
 
 (function(){
   const btn = document.getElementById("actionBtn");
-  if(!btn) return;
-  btn.addEventListener("touchstart",  e=>{ e.preventDefault(); _mobileState.action=true; btn.style.transform="scale(.88)"; }, {passive:false});
+  btn.addEventListener("touchstart",  e=>{ e.preventDefault(); latchAction(); btn.style.transform="scale(.88)"; }, {passive:false});
   btn.addEventListener("touchend",    e=>{ e.preventDefault(); btn.style.transform=""; }, {passive:false});
   btn.addEventListener("touchcancel", e=>{ e.preventDefault(); btn.style.transform=""; }, {passive:false});
-  btn.addEventListener("mousedown",  ()=>{ _mobileState.action=true; btn.style.transform="scale(.88)"; });
+  btn.addEventListener("mousedown",  ()=>{ latchAction(); btn.style.transform="scale(.88)"; });
   btn.addEventListener("mouseup",    ()=>{ btn.style.transform=""; });
 })();
 
 (function(){
   const btn = document.getElementById("jumpBtn");
   if(!btn) return;
-  btn.addEventListener("touchstart",  e=>{ e.preventDefault(); _mobileState.jump=true; btn.style.transform="scale(.88)"; }, {passive:false});
+  btn.addEventListener("touchstart",  e=>{ e.preventDefault(); latchJump(); btn.style.transform="scale(.88)"; }, {passive:false});
   btn.addEventListener("touchend",    e=>{ e.preventDefault(); btn.style.transform=""; }, {passive:false});
   btn.addEventListener("touchcancel", e=>{ e.preventDefault(); btn.style.transform=""; }, {passive:false});
-  btn.addEventListener("mousedown",  ()=>{ _mobileState.jump=true; btn.style.transform="scale(.88)"; });
+  btn.addEventListener("mousedown",  ()=>{ latchJump(); btn.style.transform="scale(.88)"; });
   btn.addEventListener("mouseup",    ()=>{ btn.style.transform=""; });
 })();
 
@@ -1249,19 +1237,17 @@ function latchJump(){
 function _syncJumpBtn(gameType){
   const btn = document.getElementById("jumpBtn");
   if(!btn) return;
-  const isTNT   = gameType === "tnt_battle";
-  const isTouch = _isTouchDevice;
-  btn.style.display        = (isTNT && isTouch) ? "flex" : "none";
-  btn.style.alignItems     = "center";
+  const isTNT    = gameType === "tnt_battle";
+  const isTouch  = window.matchMedia("(pointer:coarse)").matches;
+  btn.style.display = (isTNT && isTouch) ? "flex" : "none";
+  btn.style.alignItems = "center";
   btn.style.justifyContent = "center";
 }
 
-// Show mobile controls on any touch-capable device
-const _isTouchDevice = window.matchMedia("(pointer:coarse)").matches
-                     || ('ontouchstart' in window)
-                     || navigator.maxTouchPoints > 0;
-document.getElementById("mobileControls").style.display = _isTouchDevice ? "flex" : "none";
-if(_isTouchDevice){
+document.getElementById("mobileControls").style.display =
+  window.matchMedia("(pointer:coarse)").matches ? "flex" : "none";
+// Re-measure after controls appear so canvas height is correct
+if(window.matchMedia("(pointer:coarse)").matches){
   requestAnimationFrame(() => requestAnimationFrame(() => {
     if(S.lastState) renderGame(S.lastState);
   }));
@@ -1945,11 +1931,6 @@ function leaveGame(){
   S.roomId=null; S.hostId=null;
   localStorage.removeItem("roomId");
   localStorage.removeItem("gameType");
-  // Exit fullscreen/fake-fs before changing screen so buttons are clickable again
-  if(_fakeFS) _exitFakeFS();
-  else if(document.fullscreenElement||document.webkitFullscreenElement){
-    (document.exitFullscreen||document.webkitExitFullscreen||function(){}).call(document);
-  }
   document.getElementById("gameOverlay").classList.remove("show");
   resetReadyBtn();
   showScreen("lobbyScreen");
@@ -2309,6 +2290,45 @@ window.leaveGame = function() {
   showScreen('modeScreen');
 };
 
-// ── syncLegacyBindings and window.buildInput override removed ────────
-// Mobile input now goes through _mobileState (written by joystick/dpad/buttons).
-// buildInput() already merges _mobileState + S.keys. No override needed.
+// ── Sync Controls → legacy keyBindings on startup ─────────────────────
+// The existing buildInput() in app.js reads from keyBindings (P1 only, online).
+// We keep them in sync so online play uses Controls profile 0.
+(function syncLegacyBindings() {
+  const p0 = Controls.getProfiles()[0];
+  if (p0) {
+    keyBindings = { ...p0.keys };
+    localStorage.setItem('kb', JSON.stringify(keyBindings));
+  }
+})();
+
+// ── Override buildInput for online mode to use Controls ───────────────
+// The original buildInput() reads from S.keys + keyBindings + _actionLatch.
+// We augment it to also pick up gamepad input from Controls.getInput(0).
+// IMPORTANT: mobile touch (joystick / d-pad / action button) writes into
+// S.keys and the local _actionLatch — we must OR those in so touch still works.
+const _origBuildInput = buildInput;
+window.buildInput = function() {
+  if (LocalMode.isActive()) {
+    // Should not be called directly in local mode (each player has own loop)
+    return Controls.getInput(0);
+  }
+  // Get keyboard + gamepad state from Controls profile 0
+  const ctrl = Controls.getInput(0);
+
+  // Get mobile touch state from legacy S.keys / keyBindings / _actionLatch
+  const k = S.keys;
+  const touchAction = !!k[keyBindings.action] || _actionLatch;
+  _actionLatch = false; // consume latch
+  const touchJump = !!k[keyBindings.jump] || _jumpLatch;
+  _jumpLatch = false;
+
+  // Merge: any source being true counts as pressed
+  return {
+    up:     ctrl.up    || !!k[keyBindings.up],
+    down:   ctrl.down  || !!k[keyBindings.down],
+    left:   ctrl.left  || !!k[keyBindings.left],
+    right:  ctrl.right || !!k[keyBindings.right],
+    action: ctrl.action || touchAction,
+    jump:   ctrl.jump   || touchJump,
+  };
+};
