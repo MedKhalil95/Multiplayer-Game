@@ -848,63 +848,119 @@ hr{border:none;border-top:1px solid var(--border);width:100%;margin:18px 0}
 
 <!-- ══════════════════════════════════════ INTRO BACKGROUND -->
 <!-- Shown for 3 s after the splash button is clicked, then fades out -->
-<div id="introBg" style="
-  position:fixed;inset:0;z-index:9000;
-  background-image:url('sounds/intro.jpg');
-  background-size:cover;
-  background-position:center;
-  background-repeat:no-repeat;
-  opacity:0;
-  transition:opacity 0.6s ease;
-  pointer-events:none;
-  display:flex;align-items:flex-end;justify-content:center;
-  padding-bottom:40px;
-">
+<div id="introBg" class="intro-bg">
   <!-- subtle "loading" pulse so the player knows something is happening -->
-  <div id="introBgDots" style="
-    display:flex;gap:8px;opacity:0;transition:opacity .4s;
-  ">
-    <span style="width:8px;height:8px;border-radius:50%;background:#fff;animation:introDot .9s .0s infinite alternate ease-in-out;display:inline-block"></span>
-    <span style="width:8px;height:8px;border-radius:50%;background:#fff;animation:introDot .9s .3s infinite alternate ease-in-out;display:inline-block"></span>
-    <span style="width:8px;height:8px;border-radius:50%;background:#fff;animation:introDot .9s .6s infinite alternate ease-in-out;display:inline-block"></span>
+  <div id="introBgDots" class="intro-bg-dots">
+    <span></span>
+    <span></span>
+    <span></span>
   </div>
 </div>
 
 <!-- ══════════════════════════════════════ SPLASH SCREEN -->
-<div id="splashScreen" style="
-  position:fixed;inset:0;z-index:99999;
-  background:#0d0d14;
-  display:flex;flex-direction:column;align-items:center;justify-content:center;
-  gap:18px;
-">
-  <div style="
-    font-size:3rem;font-weight:900;letter-spacing:-2px;
-    background:linear-gradient(135deg,#6c63ff,#ff6584);
-    -webkit-background-clip:text;-webkit-text-fill-color:transparent;
-    margin-bottom:6px;
-  ">🎮 MultiGame</div>
-  <div style="color:#7878a0;font-size:.95rem;margin-bottom:10px;">
-    Play online or locally — keyboard &amp; controller support
-  </div>
-  <button id="splashBtn" style="
-    padding:16px 48px;
-    background:linear-gradient(135deg,#6c63ff,#ff6584);
-    border:none;border-radius:14px;
-    color:#fff;font-size:1.15rem;font-weight:800;
-    cursor:pointer;letter-spacing:.04em;
-    box-shadow:0 4px 32px rgba(108,99,255,.45);
-    transition:transform .15s,box-shadow .15s;
-  "
-  onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 8px 40px rgba(108,99,255,.6)'"
-  onmouseout="this.style.transform='';this.style.boxShadow='0 4px 32px rgba(108,99,255,.45)'"
-  >▶ &nbsp;Enter Game</button>
-  <div style="color:#3a3a55;font-size:.75rem;margin-top:4px;">Click to start with sound</div>
+<div id="splashScreen" class="splash-screen">
+  <div class="splash-logo">🎮 MultiGame</div>
+  <div class="splash-sub">Play online or locally — keyboard &amp; controller support</div>
+  <button id="splashBtn" class="splash-btn">▶ &nbsp;Enter Game</button>
+  <div class="splash-hint">Tap to start with sound</div>
 </div>
 
 <style>
+/* ═══════════════════════════════════════════════════════
+   INTRO BG
+═══════════════════════════════════════════════════════ */
+.intro-bg {
+  position: fixed; inset: 0; z-index: 9000;
+  background-image: url('sounds/intro.jpg');
+  background-size: cover;
+  background-position: center top;
+  background-repeat: no-repeat;
+  opacity: 0;
+  transition: opacity 0.6s ease;
+  pointer-events: none;
+  display: flex; align-items: flex-end; justify-content: center;
+  padding-bottom: env(safe-area-inset-bottom, 40px);
+  padding-bottom: max(40px, env(safe-area-inset-bottom));
+}
+.intro-bg-dots {
+  display: flex; gap: 8px;
+  opacity: 0; transition: opacity .4s;
+  padding-bottom: 16px;
+}
+.intro-bg-dots span {
+  width: 8px; height: 8px; border-radius: 50%; background: #fff; display: inline-block;
+}
+.intro-bg-dots span:nth-child(1) { animation: introDot .9s 0s   infinite alternate ease-in-out; }
+.intro-bg-dots span:nth-child(2) { animation: introDot .9s .3s  infinite alternate ease-in-out; }
+.intro-bg-dots span:nth-child(3) { animation: introDot .9s .6s  infinite alternate ease-in-out; }
+
 @keyframes introDot {
   from { opacity: .2; transform: translateY(0); }
   to   { opacity: 1;  transform: translateY(-5px); }
+}
+
+/* ═══════════════════════════════════════════════════════
+   SPLASH SCREEN
+═══════════════════════════════════════════════════════ */
+.splash-screen {
+  position: fixed; inset: 0; z-index: 99999;
+  background: #0d0d14;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 18px;
+  padding: 24px 20px;
+  padding-bottom: max(24px, env(safe-area-inset-bottom));
+}
+.splash-logo {
+  font-size: clamp(2rem, 8vw, 3.2rem);
+  font-weight: 900;
+  letter-spacing: -2px;
+  background: linear-gradient(135deg, #6c63ff, #ff6584);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 6px;
+  text-align: center;
+}
+.splash-sub {
+  color: #7878a0;
+  font-size: clamp(.8rem, 3.5vw, .95rem);
+  margin-bottom: 10px;
+  text-align: center;
+  line-height: 1.5;
+  max-width: 280px;
+}
+.splash-btn {
+  padding: 16px clamp(28px, 10vw, 48px);
+  width: min(320px, 90%);
+  background: linear-gradient(135deg, #6c63ff, #ff6584);
+  border: none; border-radius: 14px;
+  color: #fff;
+  font-size: clamp(1rem, 4vw, 1.15rem);
+  font-weight: 800;
+  cursor: pointer;
+  letter-spacing: .04em;
+  box-shadow: 0 4px 32px rgba(108,99,255,.45);
+  transition: transform .15s, box-shadow .15s;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.splash-btn:hover,
+.splash-btn:focus-visible {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 40px rgba(108,99,255,.6);
+}
+.splash-btn:active {
+  transform: scale(.96);
+  box-shadow: 0 2px 16px rgba(108,99,255,.35);
+}
+.splash-hint {
+  color: #3a3a55;
+  font-size: .75rem;
+  margin-top: 4px;
+}
+@media (max-width: 400px) {
+  .splash-screen { gap: 14px; }
+  .splash-logo { letter-spacing: -1px; }
 }
 </style>
 
