@@ -1,24 +1,57 @@
 document.getElementById("splashBtn").addEventListener("click", function(){
-  // Play the intro music on this user gesture — guaranteed to work in all browsers
-  var audio = document.getElementById("introAudio");
+  var audio   = document.getElementById("introAudio");
+  var introBg = document.getElementById("introBg");
+  var dots    = document.getElementById("introBgDots");
+  var splash  = document.getElementById("splashScreen");
+
+  // 1. Play intro music (user-gesture context — guaranteed to work)
   audio.play().catch(function(){});
 
-  // Fade in the intro background image (behind all screens)
-  var introBg = document.getElementById("introBg");
-  introBg.style.opacity = "1";
-
-  // Fade it out when audio finishes
-  function hideIntroBg() {
-    introBg.style.opacity = "0";
-  }
-  audio.addEventListener("ended", hideIntroBg, { once: true });
-  audio.addEventListener("error", hideIntroBg, { once: true });
-
-  // Fade out and remove splash
-  var splash = document.getElementById("splashScreen");
+  // 2. Fade out the splash panel immediately
   splash.style.transition = "opacity .4s";
-  splash.style.opacity = "0";
+  splash.style.opacity    = "0";
   setTimeout(function(){ splash.remove(); }, 420);
+
+  // 3. Fade IN the intro image on top of everything
+  introBg.style.pointerEvents = "all";   // block clicks during intro
+  requestAnimationFrame(function(){
+    requestAnimationFrame(function(){
+      introBg.style.opacity = "1";
+      if (dots) setTimeout(function(){ dots.style.opacity = "1"; }, 200);
+    });
+  });
+
+  // 4. After 3 seconds, fade the intro image OUT and reveal the mode screen
+  var INTRO_MS = 3000;
+  setTimeout(function(){
+    introBg.style.opacity       = "0";
+    introBg.style.pointerEvents = "none";
+    if (dots) dots.style.opacity = "0";
+
+    // Stop music if still playing (it may be shorter or longer than 3 s)
+    if (!audio.paused) {
+      audio.style && (audio.volume = audio.volume); // no-op reference
+      // Gentle fade-out over .6 s to match the image transition
+      var fadeSteps = 20;
+      var stepTime  = 600 / fadeSteps;
+      var vol       = audio.volume;
+      var fadeAudio = setInterval(function(){
+        vol = Math.max(0, vol - (audio.volume / fadeSteps));
+        audio.volume = vol;
+        if (vol <= 0) { clearInterval(fadeAudio); audio.pause(); audio.volume = 1; }
+      }, stepTime);
+    }
+
+    // Show the mode screen (it already has class "active" but may be hidden behind introBg)
+    showScreen("modeScreen");
+  }, INTRO_MS);
+
+  // Also hide intro bg immediately when audio ends naturally before 3 s
+  audio.addEventListener("ended", function(){
+    introBg.style.opacity       = "0";
+    introBg.style.pointerEvents = "none";
+    if (dots) dots.style.opacity = "0";
+  }, { once: true });
 });
 const S = {
   playerId: localStorage.getItem("pid") || rndId(),

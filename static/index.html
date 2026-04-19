@@ -847,16 +847,28 @@ hr{border:none;border-top:1px solid var(--border);width:100%;margin:18px 0}
 <audio id="introAudio" src="sounds/crash-intro.mp3" preload="auto"></audio>
 
 <!-- ══════════════════════════════════════ INTRO BACKGROUND -->
+<!-- Shown for 3 s after the splash button is clicked, then fades out -->
 <div id="introBg" style="
-  position:fixed;inset:0;z-index:0;
+  position:fixed;inset:0;z-index:9000;
   background-image:url('sounds/intro.jpg');
   background-size:cover;
   background-position:center;
   background-repeat:no-repeat;
   opacity:0;
-  transition:opacity 0.5s ease;
+  transition:opacity 0.6s ease;
   pointer-events:none;
-"></div>
+  display:flex;align-items:flex-end;justify-content:center;
+  padding-bottom:40px;
+">
+  <!-- subtle "loading" pulse so the player knows something is happening -->
+  <div id="introBgDots" style="
+    display:flex;gap:8px;opacity:0;transition:opacity .4s;
+  ">
+    <span style="width:8px;height:8px;border-radius:50%;background:#fff;animation:introDot .9s .0s infinite alternate ease-in-out;display:inline-block"></span>
+    <span style="width:8px;height:8px;border-radius:50%;background:#fff;animation:introDot .9s .3s infinite alternate ease-in-out;display:inline-block"></span>
+    <span style="width:8px;height:8px;border-radius:50%;background:#fff;animation:introDot .9s .6s infinite alternate ease-in-out;display:inline-block"></span>
+  </div>
+</div>
 
 <!-- ══════════════════════════════════════ SPLASH SCREEN -->
 <div id="splashScreen" style="
@@ -888,6 +900,13 @@ hr{border:none;border-top:1px solid var(--border);width:100%;margin:18px 0}
   >▶ &nbsp;Enter Game</button>
   <div style="color:#3a3a55;font-size:.75rem;margin-top:4px;">Click to start with sound</div>
 </div>
+
+<style>
+@keyframes introDot {
+  from { opacity: .2; transform: translateY(0); }
+  to   { opacity: 1;  transform: translateY(-5px); }
+}
+</style>
 
 
 <!-- ══════════════════════════════════════ MODE SELECT -->
