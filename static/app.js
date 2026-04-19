@@ -3,6 +3,17 @@ document.getElementById("splashBtn").addEventListener("click", function(){
   var audio = document.getElementById("introAudio");
   audio.play().catch(function(){});
 
+  // Fade in the intro background image (behind all screens)
+  var introBg = document.getElementById("introBg");
+  introBg.style.opacity = "1";
+
+  // Fade it out when audio finishes
+  function hideIntroBg() {
+    introBg.style.opacity = "0";
+  }
+  audio.addEventListener("ended", hideIntroBg, { once: true });
+  audio.addEventListener("error", hideIntroBg, { once: true });
+
   // Fade out and remove splash
   var splash = document.getElementById("splashScreen");
   splash.style.transition = "opacity .4s";

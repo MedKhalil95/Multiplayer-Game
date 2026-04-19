@@ -15,7 +15,7 @@
 body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh;overflow-x:hidden}
 
 /* screens */
-.screen{display:none;flex-direction:column;align-items:center;min-height:100vh;padding:24px 16px}
+.screen{display:none;flex-direction:column;align-items:center;min-height:100vh;padding:24px 16px;position:relative;z-index:1}
 .screen.active{display:flex}
 
 /* logo */
@@ -845,6 +845,18 @@ hr{border:none;border-top:1px solid var(--border);width:100%;margin:18px 0}
 
 <!-- ══════════════════════════════════════ INTRO AUDIO -->
 <audio id="introAudio" src="sounds/crash-intro.mp3" preload="auto"></audio>
+
+<!-- ══════════════════════════════════════ INTRO BACKGROUND -->
+<div id="introBg" style="
+  position:fixed;inset:0;z-index:0;
+  background-image:url('sounds/intro.jpg');
+  background-size:cover;
+  background-position:center;
+  background-repeat:no-repeat;
+  opacity:0;
+  transition:opacity 0.5s ease;
+  pointer-events:none;
+"></div>
 
 <!-- ══════════════════════════════════════ SPLASH SCREEN -->
 <div id="splashScreen" style="
