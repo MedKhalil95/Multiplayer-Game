@@ -49,6 +49,8 @@ const LocalMode = (() => {
     _active = true;
 
     Controls.setPlayerCount(humanCount);
+    localStorage.setItem("localMode", "1");
+    localStorage.setItem("localHumanCount", String(humanCount));
 
     // Default names/colors if not supplied
     const DEFAULT_COLORS = ["#DC5050", "#5050DC", "#50C864", "#DCDC50"];
@@ -158,16 +160,32 @@ const LocalMode = (() => {
     _inputLoops = [];
   }
 
+  /**
+   * Resume driving an already-existing local-mode room after a page
+   * refresh. Does NOT create/join a room — the human slots are still
+   * registered server-side, this just re-establishes which local
+   * playerIds this browser tab is responsible for feeding input to.
+   */
+  function resume(roomId, playerIds) {
+    stopInputLoops();
+    _active   = true;
+    _roomId   = roomId;
+    _playerIds = playerIds.slice();
+    Controls.setPlayerCount(playerIds.length);
+  }
+
   function stop() {
     stopInputLoops();
     _active   = false;
     _roomId   = null;
     _playerIds = [];
+    localStorage.removeItem("localMode");
+    localStorage.removeItem("localHumanCount");
   }
 
   function isActive() { return _active; }
   function getPlayerIds() { return _playerIds; }
 
-  return { start, startInputLoops, stopInputLoops, stop, isActive, getPlayerIds };
+  return { start, resume, startInputLoops, stopInputLoops, stop, isActive, getPlayerIds };
 
 })();

@@ -262,6 +262,18 @@ def _game_loop(room: RoomState):
     last = time.perf_counter()
 
     while room.status == "playing":
+        # ── Pause the whole simulation while nobody is connected ───────
+        # A page refresh is a full reload, not just a dropped socket: for
+        # however long that takes, this loop would otherwise keep ticking
+        # against an empty room — goals stay undefended, players can hit
+        # 0 score and get eliminated, and the match can end before the
+        # reconnect even finishes. Freezing here (no score/position
+        # changes) means the exact game state the player left is still
+        # there the moment their SSE stream reconnects.
+        if len(room.subscribers) == 0:
+            time.sleep(TICK_DT)
+            continue
+
         now  = time.perf_counter()
         last = now
 

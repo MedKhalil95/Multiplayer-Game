@@ -43,7 +43,9 @@ document.getElementById("splashBtn").addEventListener("click", function(){
     }
 
     // Show the mode screen (it already has class "active" but may be hidden behind introBg)
-    showScreen("modeScreen");
+    // — unless the player has a saved in-progress game, in which case the
+    // resume screen (set up by _showResumeScreenIfAny() at load) should win.
+    if(!_resumeInfo()) showScreen("modeScreen");
   }, INTRO_MS);
 
   // Also hide intro bg immediately when audio ends naturally before 3 s
@@ -715,6 +717,8 @@ function leaveRoom(){
   }
   localStorage.removeItem("roomId");
   localStorage.removeItem("gameType");
+  localStorage.removeItem("localMode");
+  localStorage.removeItem("localHumanCount");
   if(S.sse){ S.sse.close(); S.sse = null; }
   S.roomId = null;
   resetReadyBtn();
@@ -2024,6 +2028,8 @@ function goLobby(){
   S.roomId=null; S.hostId=null; S.pidToName={};
   localStorage.removeItem("roomId");
   localStorage.removeItem("gameType");
+  localStorage.removeItem("localMode");
+  localStorage.removeItem("localHumanCount");
   resetReadyBtn();
   showScreen("lobbyScreen");
 }
@@ -2034,6 +2040,8 @@ function leaveGame(){
   S.roomId=null; S.hostId=null;
   localStorage.removeItem("roomId");
   localStorage.removeItem("gameType");
+  localStorage.removeItem("localMode");
+  localStorage.removeItem("localHumanCount");
   document.getElementById("gameOverlay").classList.remove("show");
   resetReadyBtn();
   showScreen("lobbyScreen");
@@ -2055,19 +2063,57 @@ S.selectedColor = _savedColor;
 initColorPicker("createColorSwatches", "playerColor");
 initColorPicker("joinColorSwatches",   "playerColor");
 
-// ═══════════════════════════════════════════════════════════ REFRESH RECONNECT
-// If the player had an active room when they refreshed, silently rejoin it.
-(async function tryReconnect(){
+// ═══════════════════════════════════════════════════════════ RESUME SAVED GAME
+// Rather than silently auto-rejoining on load (which could yank the player
+// straight into a match before they're ready, or fail invisibly), show a
+// "Continue Game" screen if localStorage remembers an active room, and only
+// reconnect when the player explicitly taps it. This also means the actual
+// fetch/EventSource/fullscreen-reentry all happen inside a real user-gesture
+// click handler, which browsers are far happier about than code running on
+// page load. Works the same for online rooms and local (split-screen) rooms.
+function _resumeInfo(){
   const savedRoom = localStorage.getItem("roomId");
-  const savedType = localStorage.getItem("gameType");
-  if(!savedRoom) return;
+  if(!savedRoom) return null;
+  return {
+    roomId:     savedRoom,
+    gameType:   localStorage.getItem("gameType") || "crash_bash",
+    isLocal:    localStorage.getItem("localMode") === "1",
+    humanCount: parseInt(localStorage.getItem("localHumanCount") || "1", 10),
+  };
+}
 
-  // Restore gameType so enterRoom labels the waiting screen correctly
-  if(savedType) S.gameType = savedType;
+function _clearSavedRoom(){
+  localStorage.removeItem("roomId");
+  localStorage.removeItem("gameType");
+  localStorage.removeItem("localMode");
+  localStorage.removeItem("localHumanCount");
+}
+
+function _showResumeScreenIfAny(){
+  const info = _resumeInfo();
+  if(!info) return;
+  document.getElementById("resumeIcon").textContent      = info.gameType==="tnt_battle" ? "💥" : "⚽";
+  document.getElementById("resumeGameLabel").textContent = info.gameType==="tnt_battle" ? "TNT Battle" : "Crash Bash";
+  document.getElementById("resumeModeLabel").textContent = info.isLocal
+    ? `Local match · ${info.humanCount} player${info.humanCount>1?"s":""} on this device`
+    : "Online match";
+  showScreen("resumeScreen");
+}
+
+async function resumeSavedGame(){
+  const info = _resumeInfo();
+  if(!info){ showScreen("modeScreen"); return; }
+
+  const btn = document.getElementById("resumeContinueBtn");
+  const errEl = document.getElementById("resumeError");
+  errEl.textContent = "";
+  btn.disabled = true;
+  btn.textContent = "Connecting…";
+
+  if(info.gameType) S.gameType = info.gameType;
 
   try{
-    // First check whether the room still exists and we're still in it
-    const res = await fetch(`/api/rooms/${savedRoom}/join`, {
+    const res = await fetch(`/api/rooms/${info.roomId}/join`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Player-Id": S.playerId },
       body: JSON.stringify({
@@ -2077,22 +2123,66 @@ initColorPicker("joinColorSwatches",   "playerColor");
       }),
     });
     if(!res.ok){
-      // Room gone or we were never in it — clean up and stay on lobby
-      localStorage.removeItem("roomId");
-      localStorage.removeItem("gameType");
+      errEl.textContent = "That game is no longer available.";
+      _clearSavedRoom();
+      btn.disabled = false; btn.textContent = "▶ Continue Game";
+      setTimeout(() => showScreen("modeScreen"), 1400);
       return;
     }
     const data = await res.json();
-    S.roomId = savedRoom;
+
+    if(data.status === "finished"){
+      errEl.textContent = "That match already ended.";
+      _clearSavedRoom();
+      btn.disabled = false; btn.textContent = "▶ Continue Game";
+      setTimeout(() => showScreen("modeScreen"), 1400);
+      return;
+    }
+
+    S.roomId = info.roomId;
     if(data.host_id) S.hostId = data.host_id;
     if(data.slots) data.slots.forEach(sl => { if(sl.pid && sl.name) S.pidToName[sl.pid] = sl.name; });
-    enterRoom(savedRoom, data.status === "playing");
-  } catch(_){
-    // Network error — just stay on lobby, don't block startup
-    localStorage.removeItem("roomId");
-    localStorage.removeItem("gameType");
+
+    if(info.isLocal && info.humanCount > 1){
+      const playerIds = [S.playerId];
+      for(let i = 1; i < info.humanCount; i++){
+        const pid = localStorage.getItem(`localPid_${i}`);
+        if(pid) playerIds.push(pid);
+      }
+      LocalMode.resume(info.roomId, playerIds);
+    }
+
+    enterRoom(info.roomId, data.status === "playing");
+
+    // Re-offer fullscreen on touch devices — this click IS the user gesture
+    // the Fullscreen API requires, so it can actually succeed here (unlike
+    // trying to trigger it automatically from page-load code).
+    if(data.status === "playing" && window.matchMedia("(pointer:coarse)").matches && !_isFullscreen()){
+      toggleFullscreen();
+    }
+  } catch(e){
+    errEl.textContent = "Couldn't reach the server — check your connection.";
+    btn.disabled = false;
+    btn.textContent = "▶ Continue Game";
   }
-})();
+}
+
+function discardSavedGame(){
+  const info = _resumeInfo();
+  if(info && !info.isLocal){
+    // Best-effort: tell the server we're leaving (only works pre-game-start;
+    // ignored if the match is already playing/finished).
+    fetch(`/api/rooms/${info.roomId}/leave`, {
+      method: "POST",
+      headers: { "X-Player-Id": S.playerId },
+    }).catch(()=>{});
+  }
+  LocalMode.stop();
+  _clearSavedRoom();
+  showScreen("modeScreen");
+}
+
+_showResumeScreenIfAny();
 
 // ═══════════════════════════════════════════════════════════════════════
 //  app_additions.js

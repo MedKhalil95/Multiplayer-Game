@@ -1007,6 +1007,24 @@ hr{border:none;border-top:1px solid var(--border);width:100%;margin:18px 0}
 </style>
 
 
+<!-- ══════════════════════════════════════ RESUME SAVED GAME -->
+<div id="resumeScreen" class="screen">
+  <div class="logo">🎮 MultiGame</div>
+  <div class="subtitle">You left a game in progress</div>
+  <div style="background:var(--surf);border:1.5px solid var(--border);border-radius:14px;
+              padding:22px 26px;max-width:420px;width:100%;text-align:center;margin-bottom:20px">
+    <div style="font-size:2rem;margin-bottom:8px" id="resumeIcon">⚽</div>
+    <div id="resumeGameLabel" style="font-weight:700;margin-bottom:4px">Crash Bash</div>
+    <div id="resumeModeLabel" style="color:var(--muted);font-size:.85rem">Online match</div>
+  </div>
+  <div class="btn-row">
+    <button class="btn btn-primary" id="resumeContinueBtn" onclick="resumeSavedGame()">▶ Continue Game</button>
+    <button class="btn btn-secondary" onclick="discardSavedGame()">Start Fresh</button>
+  </div>
+  <div class="notice" id="resumeError" style="margin-top:14px;color:var(--acc2)"></div>
+</div>
+
+
 <!-- ══════════════════════════════════════ MODE SELECT -->
 <div id="modeScreen" class="screen active">
   <div class="logo">🎮 MultiGame</div>
