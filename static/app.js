@@ -1370,10 +1370,10 @@ function toggleFullscreen(){
                   el.webkitRequestFullscreen  ||
                   el.mozRequestFullScreen;
       if(req){
-        req.call(el).catch(() => {
+        req.call(el).then(_tryLockLandscape).catch(() => {
           const req2 = document.documentElement.requestFullscreen ||
                        document.documentElement.webkitRequestFullscreen;
-          if(req2) req2.call(document.documentElement).catch(_enterFakeFS);
+          if(req2) req2.call(document.documentElement).then(_tryLockLandscape).catch(_enterFakeFS);
         });
         return;
       }
@@ -1405,6 +1405,7 @@ function _enterFakeFS(){
   document.getElementById("gameScreen").classList.add("fake-fs");
   document.body.classList.add("fs-open");
   window.scrollTo(0, 0);
+  _tryLockLandscape();
   _updateFsBtn();
   setTimeout(() => { if(S.lastState) renderGame(S.lastState); }, 60);
 }
@@ -1413,8 +1414,26 @@ function _exitFakeFS(){
   _fakeFS = false;
   document.getElementById("gameScreen").classList.remove("fake-fs");
   document.body.classList.remove("fs-open");
+  _tryUnlockOrientation();
   _updateFsBtn();
   setTimeout(() => { if(S.lastState) renderGame(S.lastState); }, 60);
+}
+
+// Best-effort landscape lock while in fullscreen on mobile.
+// Only works on browsers that support the Screen Orientation Lock API
+// (mostly Android Chrome, and only inside an active fullscreen/user-gesture
+// context) — silently no-ops everywhere else, including iOS Safari.
+function _tryLockLandscape(){
+  const isMobile = window.matchMedia("(pointer:coarse)").matches;
+  if(!isMobile) return;
+  const orient = screen.orientation;
+  if(orient && orient.lock){
+    orient.lock("landscape").catch(() => {});
+  }
+}
+function _tryUnlockOrientation(){
+  const orient = screen.orientation;
+  if(orient && orient.unlock) orient.unlock();
 }
 
 const _SVG_EXPAND  = '<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>';
@@ -1429,9 +1448,47 @@ function _updateFsBtn(){
   if(S.lastState) renderGame(S.lastState);
 }
 
-document.addEventListener("fullscreenchange",       _updateFsBtn);
-document.addEventListener("webkitfullscreenchange", _updateFsBtn);
-document.addEventListener("mozfullscreenchange",    _updateFsBtn);
+function _onNativeFsChange(){
+  if(!_isFullscreen()) _tryUnlockOrientation();
+  _updateFsBtn();
+}
+document.addEventListener("fullscreenchange",       _onNativeFsChange);
+document.addEventListener("webkitfullscreenchange", _onNativeFsChange);
+document.addEventListener("mozfullscreenchange",    _onNativeFsChange);
+
+// ═══════════════════════════════════════════════════════════ GAMEPAD CONNECT FEEDBACK
+// The Gamepad API works for ANY USB/Bluetooth controller the OS+browser expose
+// as a "standard" HID gamepad — Xbox, PlayStation (DualShock/DualSense over
+// USB or Bluetooth), Switch Pro, and most generic USB pads all normalize to
+// the same button/axis layout that controls.js already reads. This just adds
+// instant visual confirmation instead of waiting for the next poll, and logs
+// non-standard mappings so odd controllers are easy to diagnose.
+let _gpToastTimer = null;
+function _showGpToast(text, isDisconnect){
+  let el = document.querySelector(".gp-toast");
+  if(!el){
+    el = document.createElement("div");
+    el.className = "gp-toast";
+    document.body.appendChild(el);
+  }
+  el.textContent = text;
+  el.classList.toggle("gp-out", !!isDisconnect);
+  requestAnimationFrame(() => el.classList.add("show"));
+  clearTimeout(_gpToastTimer);
+  _gpToastTimer = setTimeout(() => el.classList.remove("show"), 2200);
+}
+
+window.addEventListener("gamepadconnected", (e) => {
+  const gp = e.gamepad;
+  if(gp.mapping !== "standard"){
+    console.warn(`Gamepad "${gp.id}" reports a non-standard mapping (${gp.mapping || "none"}); buttons may be offset.`);
+  }
+  _showGpToast(`🎮 Controller connected: ${gp.id.slice(0, 34)}`, false);
+});
+
+window.addEventListener("gamepaddisconnected", (e) => {
+  _showGpToast(`🎮 Controller disconnected (slot ${e.gamepad.index})`, true);
+});
 
 document.addEventListener("keydown", e => {
   if(e.key === "Escape" && _fakeFS){ _exitFakeFS(); return; }

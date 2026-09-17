@@ -151,6 +151,48 @@ input[type=text]:focus,select:focus{border-color:var(--acc)}
             stroke-linecap:round;stroke-linejoin:round;transition:.15s}
 .fs-btn:hover svg{stroke:var(--text)}
 
+/* ═══════════════════════════════════════════════════════
+   FULLSCREEN MODE (native + fallback for iOS Safari, which
+   has no real Fullscreen API — toggleFullscreen() falls back
+   to adding these two classes to #gameScreen / <body>)
+═══════════════════════════════════════════════════════ */
+body.fs-open{overflow:hidden}
+#gameScreen.fake-fs{
+  position:fixed;
+  inset:0;
+  z-index:9999;
+  width:100vw;
+  height:100vh;            /* fallback for browsers without dvh */
+  height:100dvh;           /* accounts for the mobile URL bar */
+  margin:0;
+  padding:6px 6px env(safe-area-inset-bottom,6px) 6px;
+  background:var(--bg);
+  min-height:0;            /* override .screen's min-height:100vh */
+  justify-content:center;
+  overflow:hidden;
+}
+#gameScreen.fake-fs .game-hud{max-width:100%}
+#gameScreen.fake-fs #gameCanvas{max-height:100%}
+/* Native Fullscreen API target (desktop + Android Chrome) also
+   needs the same treatment since :fullscreen replaces normal layout */
+#gameScreen:fullscreen,
+#gameScreen:-webkit-full-screen{
+  width:100vw;height:100vh;height:100dvh;
+  display:flex;align-items:center;justify-content:center;
+  background:var(--bg);padding:6px;
+}
+#gameScreen:fullscreen #gameCanvas,
+#gameScreen:-webkit-full-screen #gameCanvas{max-height:100%}
+
+/* Gamepad connection toast */
+.gp-toast{position:fixed;left:50%;top:14px;transform:translate(-50%,-140%);
+  background:var(--surf);border:1.5px solid var(--green);color:var(--text);
+  padding:9px 18px;border-radius:10px;font-size:.85rem;z-index:10001;
+  box-shadow:0 6px 24px rgba(0,0,0,.5);transition:transform .25s ease;
+  pointer-events:none;white-space:nowrap}
+.gp-toast.show{transform:translate(-50%,0)}
+.gp-toast.gp-out{border-color:var(--acc2)}
+
 /* mobile controls */
 .mobile-controls{display:none}
 @media(pointer:coarse){.mobile-controls{display:flex;align-items:center;
